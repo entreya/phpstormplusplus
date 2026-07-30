@@ -1,0 +1,208 @@
+{
+  "name": "phpstormplusplus",
+  "displayName": "PHPStorm++",
+  "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
+  "version": "0.1.0",
+  "publisher": "phpstormplusplus",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Snippets",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:php",
+    "workspaceContains:**/*.php"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "php",
+        "extensions": [
+          ".php",
+          ".phtml"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "phpstormpp.extractVariable",
+        "title": "PHPStorm++: Extract Variable"
+      },
+      {
+        "command": "phpstormpp.extractMethod",
+        "title": "PHPStorm++: Extract Method"
+      },
+      {
+        "command": "phpstormpp.generateConstructor",
+        "title": "PHPStorm++: Generate Constructor"
+      },
+      {
+        "command": "phpstormpp.generateGettersSetters",
+        "title": "PHPStorm++: Generate Getters and Setters"
+      },
+      {
+        "command": "phpstormpp.generatePhpDoc",
+        "title": "PHPStorm++: Generate PHPDoc"
+      },
+      {
+        "command": "phpstormpp.database.addConnection",
+        "title": "PHPStorm++: Add Database Connection"
+      },
+      {
+        "command": "phpstormpp.database.runQuery",
+        "title": "PHPStorm++: Run Query"
+      },
+      {
+        "command": "phpstormpp.database.newQuery",
+        "title": "PHPStorm++: New Query Console"
+      },
+      {
+        "command": "phpstormpp.yii2.goToController",
+        "title": "PHPStorm++: Yii2 - Go to Controller"
+      },
+      {
+        "command": "phpstormpp.yii2.goToView",
+        "title": "PHPStorm++: Yii2 - Go to View"
+      },
+      {
+        "command": "phpstormpp.reindex",
+        "title": "PHPStorm++: Rebuild PHP Index"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "phpstormpp.extractVariable",
+          "when": "editorLangId == php",
+          "group": "1_modification"
+        },
+        {
+          "command": "phpstormpp.extractMethod",
+          "when": "editorLangId == php",
+          "group": "1_modification"
+        },
+        {
+          "command": "phpstormpp.generatePhpDoc",
+          "when": "editorLangId == php",
+          "group": "1_modification"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "phpstormpp.database.addConnection",
+          "when": "view == phpstormpp.database",
+          "group": "navigation"
+        },
+        {
+          "command": "phpstormpp.database.newQuery",
+          "when": "view == phpstormpp.database",
+          "group": "navigation"
+        }
+      ]
+    },
+    "views": {
+      "phpstormpp": [
+        {
+          "id": "phpstormpp.database",
+          "name": "Database"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "phpstormpp",
+          "title": "PHPStorm++",
+          "icon": "resources/db.svg"
+        }
+      ]
+    },
+    "breakpoints": [
+      {
+        "language": "php"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "phpstormpp-xdebug",
+        "label": "PHPStorm++ Xdebug",
+        "program": "./dist/debugAdapter.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "port": {
+                "type": "number",
+                "default": 9003
+              },
+              "pathMappings": {
+                "type": "object",
+                "default": {}
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "phpstormpp-xdebug",
+            "request": "launch",
+            "name": "Listen for Xdebug (PHPStorm++)",
+            "port": 9003
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "PHPStorm++",
+      "properties": {
+        "phpstormpp.liveTemplates": {
+          "type": "array",
+          "default": [],
+          "description": "Custom Live Templates (PhpStorm-style abbreviation snippets) in addition to the built-in set."
+        },
+        "phpstormpp.frameworks.enabled": {
+          "type": "array",
+          "default": [
+            "yii2"
+          ],
+          "description": "Framework support modules to enable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js --production",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit -p ./",
+    "pretest": "node esbuild.js && tsc -p test",
+    "test": "node out-test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/debugadapter": "^1.65.0",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.20.0",
+    "mocha": "^11.7.6",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.10.1",
+    "mysql2": "^3.9.0",
+    "pg": "^8.11.3",
+    "php-parser": "^3.1.5"
+  }
+}
