@@ -3,6 +3,7 @@ import { PhpIndex } from '../core/phpIndex';
 import { extractFileIndex } from '../core/symbolExtractor';
 import { inferVariableClass } from './typeInference';
 import { ClassSymbol } from '../core/symbols';
+import { buildAutoImportEdit } from '../refactor/importManager';
 
 const PHP_KEYWORDS = [
   'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const', 'continue',
@@ -82,6 +83,8 @@ export class PhpCompletionProvider implements vscode.CompletionItemProvider {
         const item = new vscode.CompletionItem(cls.name, vscode.CompletionItemKind.Class);
         item.detail = cls.fqcn;
         item.insertText = new vscode.SnippetString(`${cls.name}($0)`);
+        const importEdit = buildAutoImportEdit(file, document, cls);
+        if (importEdit) item.additionalTextEdits = [importEdit];
         return item;
       });
     }
@@ -90,6 +93,11 @@ export class PhpCompletionProvider implements vscode.CompletionItemProvider {
     for (const cls of this.index.allClasses()) {
       const item = new vscode.CompletionItem(cls.name, vscode.CompletionItemKind.Class);
       item.detail = cls.fqcn;
+      const importEdit = buildAutoImportEdit(file, document, cls);
+      if (importEdit) {
+        item.additionalTextEdits = [importEdit];
+        item.detail = `${cls.fqcn} (auto-import)`;
+      }
       items.push(item);
     }
     for (const [name] of uniqueFunctionNames(this.index)) {

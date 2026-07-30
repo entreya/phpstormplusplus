@@ -111,4 +111,42 @@ suite('PHPStorm++ extension', () => {
     // Undo so re-running the suite stays idempotent.
     await vscode.commands.executeCommand('undo');
   });
+
+  test('completion auto-imports a class from another namespace', async () => {
+    const doc = await openDoc('src/NeedsImport.php');
+    const text = doc.getText();
+    const position = doc.positionAt(text.indexOf('new Greeter') + 'new Greeter'.length);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      position
+    )) as vscode.CompletionList;
+    const item = list.items.find((i) => (typeof i.label === 'string' ? i.label : i.label.label) === 'Greeter');
+    assert.ok(item, 'expected a Greeter completion item');
+    assert.ok(item!.additionalTextEdits?.length, 'expected an additional text edit adding the use statement');
+    assert.match(item!.additionalTextEdits![0].newText, /use App\\Models\\Greeter;/);
+  });
+
+  test('unused imports are flagged and removable via quick fix', async () => {
+    const doc = await openDoc('src/UnusedImport.php');
+    await new Promise((r) => setTimeout(r, 800));
+
+    const diagnostics = vscode.languages.getDiagnostics(doc.uri).filter((d) => d.source === 'phpstormpp');
+    assert.strictEqual(diagnostics.length, 1, `expected exactly one unused-import diagnostic, got: ${diagnostics.map((d) => d.message).join(', ')}`);
+    assert.match(diagnostics[0].message, /App\\Models\\User/);
+
+    const actions = (await vscode.commands.executeCommand(
+      'vscode.executeCodeActionProvider',
+      doc.uri,
+      diagnostics[0].range
+    )) as vscode.CodeAction[];
+    const removeAction = actions.find((a) => a.title.includes("Remove unused import 'User'"));
+    assert.ok(removeAction, `expected a "Remove unused import" quick fix, got: ${actions.map((a) => a.title).join(', ')}`);
+
+    await vscode.workspace.applyEdit(removeAction!.edit!);
+    const newText = doc.getText();
+    assert.doesNotMatch(newText, /use App\\Models\\User;/);
+    assert.match(newText, /use App\\Models\\Greeter;/);
+    await vscode.commands.executeCommand('undo');
+  });
 });

@@ -70,12 +70,25 @@ export interface FunctionSymbol {
   uri: string;
 }
 
+export interface UseStatement {
+  alias: string;
+  fqcn: string;
+  /** range of the whole `use ...;` statement (spans all items when grouped) */
+  groupRange: vscode.Range;
+  /** range of just this item's name/alias text within the statement */
+  itemRange: vscode.Range;
+  /** how many items share this statement's `use` line (>1 for `use Foo, Bar;`-style groups) */
+  siblingCount: number;
+}
+
 export interface FileIndex {
   uri: string;
   version: number;
   namespace: string;
   /** alias -> fully qualified name, from `use` statements */
   uses: Map<string, string>;
+  /** same data as `uses`, plus source locations, for import-management (auto-import, unused cleanup) */
+  useStatements: UseStatement[];
   classes: ClassSymbol[];
   functions: FunctionSymbol[];
   ast: any;

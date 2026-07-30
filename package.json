@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -50,6 +50,14 @@
         "title": "PHPStorm++: Generate PHPDoc"
       },
       {
+        "command": "phpstormpp.optimizeImports",
+        "title": "PHPStorm++: Optimize Imports"
+      },
+      {
+        "command": "phpstormpp.generate",
+        "title": "PHPStorm++: Generate..."
+      },
+      {
         "command": "phpstormpp.database.addConnection",
         "title": "PHPStorm++: Add Database Connection"
       },
@@ -74,22 +82,50 @@
         "title": "PHPStorm++: Rebuild PHP Index"
       }
     ],
+    "submenus": [
+      {
+        "id": "phpstormpp.refactorMenu",
+        "label": "Refactor"
+      }
+    ],
     "menus": {
       "editor/context": [
         {
-          "command": "phpstormpp.extractVariable",
+          "submenu": "phpstormpp.refactorMenu",
           "when": "editorLangId == php",
-          "group": "1_modification"
+          "group": "1_modification@1"
         },
         {
-          "command": "phpstormpp.extractMethod",
+          "command": "phpstormpp.generate",
           "when": "editorLangId == php",
-          "group": "1_modification"
+          "group": "1_modification@2"
         },
         {
           "command": "phpstormpp.generatePhpDoc",
           "when": "editorLangId == php",
-          "group": "1_modification"
+          "group": "1_modification@3"
+        },
+        {
+          "command": "phpstormpp.optimizeImports",
+          "when": "editorLangId == php",
+          "group": "1_modification@4"
+        }
+      ],
+      "phpstormpp.refactorMenu": [
+        {
+          "command": "editor.action.rename",
+          "when": "editorLangId == php",
+          "group": "1_rename@1"
+        },
+        {
+          "command": "phpstormpp.extractVariable",
+          "when": "editorLangId == php",
+          "group": "2_extract@1"
+        },
+        {
+          "command": "phpstormpp.extractMethod",
+          "when": "editorLangId == php",
+          "group": "2_extract@2"
         }
       ],
       "view/title": [
@@ -161,6 +197,18 @@
         ]
       }
     ],
+    "themes": [
+      {
+        "label": "PHPStorm++ Dark (Darcula-inspired)",
+        "uiTheme": "vs-dark",
+        "path": "./themes/phpstormpp-dark-color-theme.json"
+      },
+      {
+        "label": "PHPStorm++ Light",
+        "uiTheme": "vs",
+        "path": "./themes/phpstormpp-light-color-theme.json"
+      }
+    ],
     "configuration": {
       "title": "PHPStorm++",
       "properties": {
@@ -177,7 +225,495 @@
           "description": "Framework support modules to enable."
         }
       }
-    }
+    },
+    "extensionPack": [
+      "phantriviethoang.phpstorm-icon"
+    ],
+    "configurationDefaults": {
+      "workbench.colorTheme": "PHPStorm++ Dark (Darcula-inspired)",
+      "workbench.iconTheme": "phpstorm-icon",
+      "workbench.sideBar.location": "left",
+      "workbench.panel.defaultLocation": "bottom",
+      "workbench.activityBar.location": "default",
+      "workbench.editor.showTabs": "multiple",
+      "workbench.tree.renderIndentGuides": "always",
+      "breadcrumbs.enabled": true,
+      "explorer.autoReveal": true,
+      "editor.fontFamily": "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, Menlo, monospace",
+      "editor.fontLigatures": true,
+      "editor.fontSize": 16,
+      "editor.lineHeight": 1.35,
+      "editor.tabSize": 4,
+      "editor.insertSpaces": true,
+      "editor.detectIndentation": false,
+      "editor.rulers": [
+        120
+      ],
+      "editor.trimAutoWhitespace": true,
+      "files.trimTrailingWhitespace": true,
+      "files.insertFinalNewline": true,
+      "editor.matchBrackets": "always",
+      "editor.bracketPairColorization.enabled": true,
+      "editor.guides.bracketPairs": true,
+      "editor.cursorBlinking": "smooth",
+      "editor.cursorSmoothCaretAnimation": "on",
+      "editor.smoothScrolling": true,
+      "editor.stickyScroll.enabled": true,
+      "editor.minimap.enabled": true,
+      "editor.minimap.renderCharacters": false,
+      "editor.wordWrap": "off",
+      "editor.linkedEditing": true,
+      "editor.suggestSelection": "first",
+      "editor.snippetSuggestions": "top",
+      "explorer.compactFolders": false,
+      "workbench.editor.highlightModifiedTabs": true,
+      "workbench.tree.indent": 16,
+      "[php]": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.rulers": [
+          120
+        ]
+      }
+    },
+    "keybindings": [
+      {
+        "command": "workbench.action.showCommands",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "workbench.view.explorer",
+        "key": "alt+1",
+        "mac": "cmd+1"
+      },
+      {
+        "command": "workbench.action.tasks.build",
+        "key": "ctrl+shift+f9",
+        "mac": "cmd+shift+f9"
+      },
+      {
+        "command": "editor.action.quickFix",
+        "when": "editorTextFocus",
+        "key": "alt+enter",
+        "mac": "alt+enter"
+      },
+      {
+        "command": "workbench.action.showAllEditorsByMostRecentlyUsed",
+        "key": "ctrl+e",
+        "mac": "cmd+e"
+      },
+      {
+        "command": "editor.action.referenceSearch.trigger",
+        "when": "editorTextFocus",
+        "key": "alt+f7",
+        "mac": "alt+f7"
+      },
+      {
+        "command": "workbench.action.openSettings",
+        "key": "ctrl+alt+s"
+      },
+      {
+        "command": "phpstormpp.generate",
+        "when": "editorTextFocus",
+        "key": "alt+insert",
+        "mac": "cmd+n"
+      },
+      {
+        "command": "workbench.action.debug.selectandstart",
+        "key": "alt+shift+f9",
+        "mac": "ctrl+alt+d"
+      },
+      {
+        "command": "workbench.view.debug",
+        "key": "ctrl+shift+f8",
+        "mac": "cmd+shift+f8"
+      },
+      {
+        "command": "workbench.view.scm",
+        "key": "alt+`",
+        "mac": "ctrl+v"
+      },
+      {
+        "command": "editor.action.refactor",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+shift+t",
+        "mac": "ctrl+t"
+      },
+      {
+        "command": "editor.action.formatDocument",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "workbench.action.tasks.build",
+        "key": "ctrl+f9",
+        "mac": "cmd+f9"
+      },
+      {
+        "command": "editor.action.deleteLines",
+        "when": "editorTextFocus",
+        "key": "ctrl+y",
+        "mac": "cmd+backspace"
+      },
+      {
+        "command": "editor.action.copyLinesDownAction",
+        "when": "editorTextFocus",
+        "key": "ctrl+d",
+        "mac": "cmd+d"
+      },
+      {
+        "command": "editor.action.joinLines",
+        "when": "editorTextFocus",
+        "key": "ctrl+shift+j"
+      },
+      {
+        "command": "workbench.action.files.newUntitledFile",
+        "key": "ctrl+alt+shift+insert",
+        "mac": "cmd+shift+n"
+      },
+      {
+        "command": "editor.action.fontZoomIn",
+        "key": "alt+shift+.",
+        "mac": "ctrl+shift+."
+      },
+      {
+        "command": "editor.action.fontZoomOut",
+        "key": "alt+shift+,",
+        "mac": "ctrl+shift+,"
+      },
+      {
+        "command": "editor.action.jumpToBracket",
+        "when": "editorTextFocus",
+        "key": "ctrl+shift+m",
+        "mac": "ctrl+m"
+      },
+      {
+        "command": "editor.action.smartSelect.expand",
+        "when": "editorTextFocus",
+        "key": "ctrl+w",
+        "mac": "alt+up"
+      },
+      {
+        "command": "editor.action.smartSelect.shrink",
+        "when": "editorTextFocus",
+        "key": "ctrl+shift+w",
+        "mac": "alt+down"
+      },
+      {
+        "command": "editor.action.insertCursorAbove",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+up"
+      },
+      {
+        "command": "editor.action.insertCursorBelow",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+down"
+      },
+      {
+        "command": "editor.action.addSelectionToNextFindMatch",
+        "when": "editorTextFocus",
+        "key": "alt+j",
+        "mac": "ctrl+g"
+      },
+      {
+        "command": "editor.action.selectHighlightsAction",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+shift+j",
+        "mac": "cmd+ctrl+g"
+      },
+      {
+        "command": "editor.action.moveLinesUpAction",
+        "when": "editorTextFocus",
+        "key": "alt+shift+up"
+      },
+      {
+        "command": "editor.action.moveLinesDownAction",
+        "when": "editorTextFocus",
+        "key": "alt+shift+down"
+      },
+      {
+        "command": "editor.action.commentLine",
+        "when": "editorTextFocus",
+        "key": "ctrl+/",
+        "mac": "cmd+/"
+      },
+      {
+        "command": "editor.action.blockComment",
+        "when": "editorTextFocus",
+        "key": "ctrl+shift+/",
+        "mac": "cmd+alt+/"
+      },
+      {
+        "command": "editor.action.triggerSuggest",
+        "when": "editorTextFocus",
+        "key": "ctrl+space"
+      },
+      {
+        "command": "editor.action.triggerParameterHints",
+        "when": "editorTextFocus",
+        "key": "ctrl+p",
+        "mac": "cmd+p"
+      },
+      {
+        "command": "editor.action.showHover",
+        "when": "editorTextFocus",
+        "key": "ctrl+q",
+        "mac": "f1"
+      },
+      {
+        "command": "editor.action.insertLineAfter",
+        "when": "editorTextFocus",
+        "key": "shift+enter"
+      },
+      {
+        "command": "workbench.action.gotoLine",
+        "key": "ctrl+g",
+        "mac": "cmd+l"
+      },
+      {
+        "command": "workbench.action.navigateBack",
+        "key": "ctrl+alt+left",
+        "mac": "cmd+["
+      },
+      {
+        "command": "workbench.action.navigateForward",
+        "key": "ctrl+alt+right",
+        "mac": "cmd+]"
+      },
+      {
+        "command": "workbench.action.nextEditor",
+        "key": "alt+right",
+        "mac": "cmd+shift+]"
+      },
+      {
+        "command": "workbench.action.previousEditor",
+        "key": "alt+left",
+        "mac": "cmd+shift+["
+      },
+      {
+        "command": "editor.action.marker.next",
+        "when": "editorTextFocus",
+        "key": "f2",
+        "mac": "f2"
+      },
+      {
+        "command": "editor.action.marker.prev",
+        "when": "editorTextFocus",
+        "key": "shift+f2",
+        "mac": "shift+f2"
+      },
+      {
+        "command": "actions.find",
+        "when": "editorTextFocus",
+        "key": "ctrl+f",
+        "mac": "cmd+f"
+      },
+      {
+        "command": "editor.action.nextMatchFindAction",
+        "key": "f3",
+        "mac": "cmd+g"
+      },
+      {
+        "command": "editor.action.previousMatchFindAction",
+        "key": "shift+f3",
+        "mac": "cmd+shift+g"
+      },
+      {
+        "command": "editor.action.startFindReplaceAction",
+        "when": "editorTextFocus",
+        "key": "ctrl+r",
+        "mac": "cmd+r"
+      },
+      {
+        "command": "workbench.action.findInFiles",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f"
+      },
+      {
+        "command": "workbench.action.replaceInFiles",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r"
+      },
+      {
+        "command": "workbench.action.showAllSymbols",
+        "key": "ctrl+n",
+        "mac": "cmd+o"
+      },
+      {
+        "command": "workbench.action.quickOpen",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+o"
+      },
+      {
+        "command": "workbench.action.gotoSymbol",
+        "key": "ctrl+alt+shift+n",
+        "mac": "cmd+alt+o"
+      },
+      {
+        "command": "editor.action.revealDefinition",
+        "when": "editorTextFocus",
+        "key": "ctrl+b",
+        "mac": "cmd+b"
+      },
+      {
+        "command": "editor.action.goToTypeDefinition",
+        "when": "editorTextFocus",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b"
+      },
+      {
+        "command": "editor.action.referenceSearch.trigger",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+f7",
+        "mac": "cmd+alt+f7"
+      },
+      {
+        "command": "editor.action.goToImplementation",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b"
+      },
+      {
+        "command": "workbench.action.debug.run",
+        "key": "shift+f10",
+        "mac": "ctrl+r"
+      },
+      {
+        "command": "workbench.action.debug.start",
+        "key": "shift+f9",
+        "mac": "ctrl+d"
+      },
+      {
+        "command": "workbench.action.debug.stop",
+        "key": "ctrl+f2",
+        "mac": "cmd+f2"
+      },
+      {
+        "command": "workbench.action.debug.continue",
+        "key": "f9",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "workbench.action.debug.stepOver",
+        "key": "f8"
+      },
+      {
+        "command": "workbench.action.debug.stepInto",
+        "key": "f7"
+      },
+      {
+        "command": "workbench.action.debug.stepOut",
+        "key": "shift+f8"
+      },
+      {
+        "command": "editor.debug.action.runToCursor",
+        "when": "editorTextFocus",
+        "key": "alt+f9",
+        "mac": "alt+f9"
+      },
+      {
+        "command": "workbench.debug.action.focusRepl",
+        "key": "alt+f8",
+        "mac": "alt+f8"
+      },
+      {
+        "command": "editor.debug.action.toggleBreakpoint",
+        "when": "editorTextFocus",
+        "key": "ctrl+f8",
+        "mac": "cmd+f8"
+      },
+      {
+        "command": "workbench.view.debug",
+        "key": "alt+4",
+        "mac": "cmd+4"
+      },
+      {
+        "command": "workbench.view.debug",
+        "key": "alt+5",
+        "mac": "cmd+5"
+      },
+      {
+        "command": "workbench.actions.view.problems",
+        "key": "alt+6",
+        "mac": "cmd+6"
+      },
+      {
+        "command": "editor.action.rename",
+        "when": "editorTextFocus",
+        "key": "shift+f6"
+      },
+      {
+        "command": "phpstormpp.extractMethod",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m"
+      },
+      {
+        "command": "phpstormpp.extractVariable",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v"
+      },
+      {
+        "command": "phpstormpp.optimizeImports",
+        "when": "editorTextFocus",
+        "key": "ctrl+alt+o",
+        "mac": "ctrl+alt+o"
+      },
+      {
+        "command": "git.commit",
+        "key": "ctrl+k",
+        "mac": "cmd+k"
+      },
+      {
+        "command": "git.sync",
+        "key": "ctrl+t",
+        "mac": "cmd+t"
+      },
+      {
+        "command": "git.push",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k"
+      },
+      {
+        "command": "git.undoCommit",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z"
+      },
+      {
+        "command": "workbench.view.scm",
+        "key": "alt+9",
+        "mac": "cmd+9"
+      },
+      {
+        "command": "workbench.action.compareEditor.nextChange",
+        "key": "f7"
+      },
+      {
+        "command": "workbench.action.compareEditor.previousChange",
+        "key": "shift+f7"
+      },
+      {
+        "command": "workbench.action.closePanel",
+        "key": "shift+escape"
+      },
+      {
+        "command": "workbench.action.closeSidebar",
+        "key": "ctrl+shift+f12",
+        "mac": "cmd+shift+f12"
+      },
+      {
+        "command": "workbench.action.terminal.toggleTerminal",
+        "key": "alt+f12"
+      },
+      {
+        "command": "workbench.view.extension.phpstormpp",
+        "key": "alt+8",
+        "mac": "cmd+8"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "node esbuild.js --production",

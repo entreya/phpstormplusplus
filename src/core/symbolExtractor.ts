@@ -13,6 +13,7 @@ export function extractFileIndex(uri: string, code: string, version: number): Fi
     version,
     namespace: '',
     uses: new Map(),
+    useStatements: [],
     classes: [],
     functions: [],
     ast
@@ -33,10 +34,19 @@ function processContainer(children: AstNode[], namespace: string, index: FileInd
       }
       case 'usegroup': {
         const prefix: string | null = node.name ?? null;
-        for (const item of node.items ?? []) {
+        const items = node.items ?? [];
+        const groupRange = locToRange(node.loc);
+        for (const item of items) {
           const full = prefix ? `${prefix}\\${item.name}` : item.name;
           const alias = item.alias ? nodeName(item.alias) ?? full.split('\\').pop()! : full.split('\\').pop()!;
           index.uses.set(alias, full);
+          index.useStatements.push({
+            alias,
+            fqcn: full,
+            groupRange,
+            itemRange: locToRange(item.loc),
+            siblingCount: items.length
+          });
         }
         break;
       }

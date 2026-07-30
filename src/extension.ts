@@ -15,6 +15,9 @@ import { ConnectionManager, promptNewConnection } from './database/connectionMan
 import { DatabaseTreeProvider } from './database/treeDataProvider';
 import { openQueryPanel } from './database/queryPanel';
 import { activateFrameworkModules } from './frameworks/frameworkRegistry';
+import { createImportDiagnostics } from './language/importDiagnostics';
+import { ImportCodeActionProvider } from './refactor/importCodeActions';
+import { optimizeImports } from './refactor/importManager';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
@@ -26,15 +29,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     index.indexWorkspace(progress)
   );
 
+  const importDiagnostics = createImportDiagnostics(index);
+  context.subscriptions.push(importDiagnostics.collection);
+
+  function indexAndRefresh(doc: vscode.TextDocument): void {
+    index.indexDocument(doc);
+    importDiagnostics.refresh(doc);
+  }
+
   context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument((doc) => index.indexDocument(doc)),
-    vscode.workspace.onDidOpenTextDocument((doc) => index.indexDocument(doc)),
-    vscode.workspace.onDidChangeTextDocument((e) => index.indexDocument(e.document))
+    vscode.workspace.onDidSaveTextDocument(indexAndRefresh),
+    vscode.workspace.onDidOpenTextDocument(indexAndRefresh),
+    vscode.workspace.onDidChangeTextDocument((e) => indexAndRefresh(e.document))
   );
+  for (const doc of vscode.workspace.textDocuments) indexAndRefresh(doc);
 
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
   watcher.onDidDelete((uri) => index.removeFile(uri));
-  watcher.onDidCreate(async (uri) => index.indexDocument(await vscode.workspace.openTextDocument(uri)));
+  watcher.onDidCreate(async (uri) => indexAndRefresh(await vscode.workspace.openTextDocument(uri)));
   context.subscriptions.push(watcher);
 
   context.subscriptions.push(
@@ -45,7 +57,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerWorkspaceSymbolProvider(new PhpWorkspaceSymbolProvider(index)),
     vscode.languages.registerRenameProvider(PHP_SELECTOR, new PhpRenameProvider(index)),
     vscode.languages.registerCompletionItemProvider(PHP_SELECTOR, new PhpCompletionProvider(index), '>', ':', '$'),
-    vscode.languages.registerCompletionItemProvider(PHP_SELECTOR, new LiveTemplateCompletionProvider())
+    vscode.languages.registerCompletionItemProvider(PHP_SELECTOR, new LiveTemplateCompletionProvider()),
+    vscode.languages.registerCodeActionsProvider(PHP_SELECTOR, new ImportCodeActionProvider(index), {
+      providedCodeActionKinds: ImportCodeActionProvider.providedCodeActionKinds
+    })
   );
 
   context.subscriptions.push(
@@ -69,11 +84,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const editor = vscode.window.activeTextEditor;
       if (editor) void generatePhpDoc(editor, index);
     }),
+    vscode.commands.registerCommand('phpstormpp.generate', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const pick = await vscode.window.showQuickPick(
+        [
+          { label: 'Constructor', action: () => generateConstructor(editor, index) },
+          { label: 'Getters and Setters', action: () => generateGettersSetters(editor, index) },
+          { label: 'PHPDoc', action: () => generatePhpDoc(editor, index) }
+        ],
+        { title: 'Generate' }
+      );
+      await pick?.action();
+    }),
     vscode.commands.registerCommand('phpstormpp.reindex', () =>
       vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: rebuilding index' }, (progress) =>
         index.indexWorkspace(progress)
       )
-    )
+    ),
+    vscode.commands.registerCommand('phpstormpp.optimizeImports', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      await optimizeImports(editor, index);
+      importDiagnostics.refresh(editor.document);
+    })
   );
 
   const connections = new ConnectionManager(context);
