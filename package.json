@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.2.2",
+  "version": "0.3.1",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -80,6 +80,10 @@
       {
         "command": "phpstormpp.reindex",
         "title": "PHPStorm++: Rebuild PHP Index"
+      },
+      {
+        "command": "phpstormpp.searchEverywhere",
+        "title": "PHPStorm++: Search Everywhere"
       }
     ],
     "submenus": [
@@ -268,6 +272,11 @@
       "explorer.compactFolders": false,
       "workbench.editor.highlightModifiedTabs": true,
       "workbench.tree.indent": 16,
+      "search.searchOnType": true,
+      "search.searchOnTypeDebouncePeriod": 300,
+      "search.smartCase": true,
+      "search.showLineNumbers": true,
+      "search.followSymlinks": false,
       "[php]": {
         "editor.tabSize": 4,
         "editor.insertSpaces": true,
@@ -277,6 +286,11 @@
       }
     },
     "keybindings": [
+      {
+        "command": "phpstormpp.searchEverywhere",
+        "key": "ctrl+;",
+        "mac": "cmd+;"
+      },
       {
         "command": "workbench.action.showCommands",
         "key": "ctrl+shift+a",

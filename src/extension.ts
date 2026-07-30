@@ -18,6 +18,8 @@ import { activateFrameworkModules } from './frameworks/frameworkRegistry';
 import { createImportDiagnostics } from './language/importDiagnostics';
 import { ImportCodeActionProvider } from './refactor/importCodeActions';
 import { optimizeImports } from './refactor/importManager';
+import { registerSearchEverywhere } from './language/searchEverywhere';
+import { detectFrameworks } from './frameworks/genericDetector';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
@@ -25,9 +27,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const index = new PhpIndex();
   context.subscriptions.push(index);
 
-  await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing PHP files' }, (progress) =>
-    index.indexWorkspace(progress)
+  const { scanned } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing project PHP files' },
+    (progress) => index.indexWorkspace(progress)
   );
+
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+  const detected = workspaceRoot ? await detectFrameworks(workspaceRoot) : [];
+  const detectedLabel = detected.length ? ` — detected ${detected.map((d) => d.name).join(', ')}` : '';
+  vscode.window.setStatusBarMessage(`PHPStorm++: indexed ${scanned} project files${detectedLabel}. Scanning vendor/ in the background...`, 6000);
+
+  // vendor/ (framework + dependency source) can be huge, so it's scanned in the
+  // background in small yielding batches instead of blocking activation — see
+  // PhpIndex.indexVendorInBackground. Autocomplete for deep vendor classes fills
+  // in progressively rather than being capped or gated behind a wait.
+  void index.indexVendorInBackground((vendorScanned) => {
+    if (vendorScanned > 0) {
+      vscode.window.setStatusBarMessage(`PHPStorm++: finished indexing ${vendorScanned} vendor/ files (${index.allClasses().length} classes total).`, 6000);
+    }
+  });
 
   const importDiagnostics = createImportDiagnostics(index);
   context.subscriptions.push(importDiagnostics.collection);
@@ -144,6 +162,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const frameworkDisposables = await activateFrameworkModules(context, index);
   context.subscriptions.push(...frameworkDisposables);
+
+  context.subscriptions.push(registerSearchEverywhere(index));
 }
 
 export function deactivate(): void {

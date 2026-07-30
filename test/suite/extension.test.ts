@@ -76,6 +76,18 @@ suite('PHPStorm++ extension', () => {
     assert.ok(results.some((s) => s.name === 'User'), 'expected workspace symbol search to find User');
   });
 
+  test('vendor/ classes are indexed in the background without blocking activation', async () => {
+    // The background vendor scan runs concurrently with everything else and yields
+    // between batches, so poll for a bit rather than assuming it's done already.
+    let results: vscode.SymbolInformation[] = [];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      results = (await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'VendorThing')) as vscode.SymbolInformation[];
+      if (results.some((s) => s.name === 'VendorThing')) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    assert.ok(results.some((s) => s.name === 'VendorThing'), 'expected the background vendor/ scan to eventually index VendorThing');
+  });
+
   test('Live Template completion offers the "fore" foreach template', async () => {
     const doc = await openDoc('src/Usage.php');
     const position = new vscode.Position(0, 0);
@@ -148,5 +160,28 @@ suite('PHPStorm++ extension', () => {
     assert.doesNotMatch(newText, /use App\\Models\\User;/);
     assert.match(newText, /use App\\Models\\Greeter;/);
     await vscode.commands.executeCommand('undo');
+  });
+
+  test('completion includes PHP core built-in functions and classes', async () => {
+    const doc = await openDoc('src/Usage.php');
+    // A blank line inside the class body, bare-word context (not after -> or ::).
+    const position = new vscode.Position(doc.lineCount - 1, 0);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      position
+    )) as vscode.CompletionList;
+    const labels = list.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label));
+    assert.ok(labels.includes('array_map'), 'expected PHP core function array_map among completions');
+    assert.ok(labels.includes('DateTime'), 'expected PHP core class DateTime among completions');
+  });
+
+  test('Search Everywhere command is registered and opens without throwing', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('phpstormpp.searchEverywhere'), 'expected phpstormpp.searchEverywhere to be a registered command');
+
+    await vscode.commands.executeCommand('phpstormpp.searchEverywhere');
+    await new Promise((r) => setTimeout(r, 200));
+    await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
   });
 });

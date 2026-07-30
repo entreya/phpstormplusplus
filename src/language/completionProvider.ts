@@ -4,6 +4,7 @@ import { extractFileIndex } from '../core/symbolExtractor';
 import { inferVariableClass } from './typeInference';
 import { ClassSymbol } from '../core/symbols';
 import { buildAutoImportEdit } from '../refactor/importManager';
+import { PHP_BUILTIN_CLASSES, PHP_BUILTIN_FUNCTIONS } from '../core/phpBuiltins';
 
 const PHP_KEYWORDS = [
   'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class', 'clone', 'const', 'continue',
@@ -79,7 +80,7 @@ export class PhpCompletionProvider implements vscode.CompletionItemProvider {
 
     const newExpr = /\bnew\s+(\w*)$/.exec(linePrefix);
     if (newExpr) {
-      return this.index.allClasses().map((cls) => {
+      const items = this.index.allClasses().map((cls) => {
         const item = new vscode.CompletionItem(cls.name, vscode.CompletionItemKind.Class);
         item.detail = cls.fqcn;
         item.insertText = new vscode.SnippetString(`${cls.name}($0)`);
@@ -87,6 +88,13 @@ export class PhpCompletionProvider implements vscode.CompletionItemProvider {
         if (importEdit) item.additionalTextEdits = [importEdit];
         return item;
       });
+      for (const name of PHP_BUILTIN_CLASSES) {
+        const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Class);
+        item.detail = 'PHP core';
+        item.insertText = new vscode.SnippetString(`${name}($0)`);
+        items.push(item);
+      }
+      return items;
     }
 
     const items: vscode.CompletionItem[] = PHP_KEYWORDS.map((k) => new vscode.CompletionItem(k, vscode.CompletionItemKind.Keyword));
@@ -102,6 +110,16 @@ export class PhpCompletionProvider implements vscode.CompletionItemProvider {
     }
     for (const [name] of uniqueFunctionNames(this.index)) {
       items.push(new vscode.CompletionItem(name, vscode.CompletionItemKind.Function));
+    }
+    for (const name of PHP_BUILTIN_FUNCTIONS) {
+      const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Function);
+      item.detail = 'PHP core';
+      items.push(item);
+    }
+    for (const name of PHP_BUILTIN_CLASSES) {
+      const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Class);
+      item.detail = 'PHP core';
+      items.push(item);
     }
     return items;
   }

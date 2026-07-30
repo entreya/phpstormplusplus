@@ -17,28 +17,65 @@ export class PhpIndex implements vscode.Disposable {
   private readonly _onDidReindex = new vscode.EventEmitter<void>();
   readonly onDidReindex = this._onDidReindex.event;
 
-  async indexWorkspace(progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<void> {
-    const uris = await vscode.workspace.findFiles('**/*.php', '**/{node_modules,vendor/**/tests,.git}/**');
+  private static readonly VENDOR_EXCLUDE = '**/{node_modules,.git,vendor/**/{tests,Tests,test,Test,docs,doc,examples,example,bin}}/**';
+
+  private async scanFiles(
+    uris: vscode.Uri[],
+    progress?: vscode.Progress<{ message?: string; increment?: number }>,
+    label = 'files',
+    yieldEvery = 40
+  ): Promise<number> {
     let done = 0;
     for (const uri of uris) {
       try {
-        const doc = await vscode.workspace.openTextDocument(uri);
-        this.indexDocument(doc, false);
+        // Reads raw bytes rather than opening each file as a live vscode.TextDocument —
+        // much lighter when vendor/ has thousands of files.
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        this.applyFileIndex(uri.toString(), Buffer.from(bytes).toString('utf8'), 0, false);
       } catch {
         // unreadable file, skip
       }
       done++;
-      if (progress && done % 25 === 0) {
-        progress.report({ message: `${done}/${uris.length} files`, increment: (25 / uris.length) * 100 });
+      if (done % yieldEvery === 0) {
+        progress?.report({ message: `${label}: ${done}/${uris.length}`, increment: (yieldEvery / uris.length) * 100 });
+        this._onDidReindex.fire();
+        // Yield to the event loop periodically so a big background scan never
+        // blocks typing, completion, or anything else the user is doing.
+        await new Promise((resolve) => setImmediate(resolve));
       }
     }
+    return done;
+  }
+
+  /** Fast foreground scan of the project's own PHP files (vendor/ excluded). Small
+   * and quick enough on any real project to await directly during activation. */
+  async indexWorkspace(progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<{ scanned: number }> {
+    const uris = await vscode.workspace.findFiles('**/*.php', '**/{node_modules,.git,vendor}/**');
+    const scanned = await this.scanFiles(uris, progress, 'project files');
     this._onDidReindex.fire();
+    return { scanned };
+  }
+
+  /**
+   * Scans vendor/ (framework + dependency source) in the background, in small
+   * yielding batches, firing onDidReindex as it goes so completion/hover pick up
+   * newly-discovered classes progressively. Never awaited by activate() — a huge
+   * vendor tree takes longer, but no longer blocks startup or the editor at all.
+   */
+  async indexVendorInBackground(onDone?: (scanned: number) => void): Promise<void> {
+    const uris = await vscode.workspace.findFiles('vendor/**/*.php', PhpIndex.VENDOR_EXCLUDE);
+    const scanned = await this.scanFiles(uris, undefined, 'vendor/');
+    this._onDidReindex.fire();
+    onDone?.(scanned);
   }
 
   indexDocument(document: vscode.TextDocument, notify = true): void {
     if (document.languageId !== 'php') return;
-    const key = document.uri.toString();
-    const fresh = extractFileIndex(key, document.getText(), document.version);
+    this.applyFileIndex(document.uri.toString(), document.getText(), document.version, notify);
+  }
+
+  private applyFileIndex(key: string, text: string, version: number, notify: boolean): void {
+    const fresh = extractFileIndex(key, text, version);
     if (!fresh) return;
     this.removeFileFromMaps(key);
     this.files.set(key, fresh);
