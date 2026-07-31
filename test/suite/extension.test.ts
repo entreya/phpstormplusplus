@@ -296,4 +296,26 @@ suite('PHPStorm++ extension', () => {
       (vscode.window as any).showWarningMessage = originalWarn;
     }
   });
+
+  test('Command Center is registered and dispatches a picked item to the right command', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('phpstormpp.openCommandCenter'), 'expected phpstormpp.openCommandCenter to be a registered command');
+
+    let executedReindex = false;
+    const originalExecute = vscode.commands.executeCommand;
+    const originalQuickPick = vscode.window.showQuickPick;
+    (vscode.commands as any).executeCommand = async (command: string, ...args: unknown[]) => {
+      if (command === 'phpstormpp.reindex') executedReindex = true;
+      return originalExecute.apply(vscode.commands, [command, ...args] as Parameters<typeof originalExecute>);
+    };
+    (vscode.window as any).showQuickPick = async (items: any[]) => items.find((i) => i.label?.includes('Rebuild PHP Index'));
+    try {
+      await vscode.commands.executeCommand('phpstormpp.openCommandCenter');
+      await new Promise((r) => setTimeout(r, 200));
+    } finally {
+      (vscode.commands as any).executeCommand = originalExecute;
+      (vscode.window as any).showQuickPick = originalQuickPick;
+    }
+    assert.ok(executedReindex, 'expected picking "Rebuild PHP Index" to invoke phpstormpp.reindex');
+  });
 });

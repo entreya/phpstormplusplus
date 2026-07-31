@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -92,6 +92,10 @@
       {
         "command": "phpstormpp.checkForUpdates",
         "title": "PHPStorm++: Check for Updates"
+      },
+      {
+        "command": "phpstormpp.openCommandCenter",
+        "title": "PHPStorm++: Open Command Center"
       }
     ],
     "submenus": [
@@ -319,6 +323,11 @@
         "command": "phpstormpp.searchEverywhere",
         "key": "ctrl+;",
         "mac": "cmd+;"
+      },
+      {
+        "command": "phpstormpp.openCommandCenter",
+        "key": "ctrl+shift+;",
+        "mac": "cmd+shift+;"
       },
       {
         "command": "workbench.action.showCommands",

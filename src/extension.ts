@@ -23,6 +23,7 @@ import { detectFrameworks } from './frameworks/genericDetector';
 import { newPhpClass, registerAutoClassOnCreate } from './refactor/newPhpClass';
 import { PreviewViewProvider } from './language/previewPanel';
 import { checkForUpdates } from './updateChecker';
+import { registerCommandCenter } from './commandCenter';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
@@ -190,6 +191,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerAutoClassOnCreate(),
     vscode.commands.registerCommand('phpstormpp.newPhpClass', (uri?: vscode.Uri) => newPhpClass(uri))
   );
+
+  context.subscriptions.push(...registerCommandCenter());
 }
 
 export function deactivate(): void {
