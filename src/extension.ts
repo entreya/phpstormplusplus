@@ -32,7 +32,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const currentVersion = context.extension.packageJSON.version as string;
   void checkForUpdates(context, currentVersion, false);
+  // checkForUpdates self-throttles to once/24h via globalState, but that
+  // throttle only matters if something actually re-invokes it — activation
+  // alone only fires once per window reload. A long-running window that's
+  // never reloaded would otherwise never check again. This interval is the
+  // "wake up and see if it's been a day yet" heartbeat; the throttle inside
+  // checkForUpdates still governs how often it actually hits the network.
+  const updateCheckTimer = setInterval(() => void checkForUpdates(context, currentVersion, false), 60 * 60 * 1000);
   context.subscriptions.push(
+    { dispose: () => clearInterval(updateCheckTimer) },
     vscode.commands.registerCommand('phpstormpp.checkForUpdates', () => checkForUpdates(context, currentVersion, true))
   );
 
