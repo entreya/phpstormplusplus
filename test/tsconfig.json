@@ -3,7 +3,7 @@
     "module": "commonjs",
     "target": "ES2022",
     "outDir": "../out-test",
-    "rootDir": ".",
+    "rootDir": "..",
     "sourceMap": true,
     "strict": false,
     "moduleResolution": "node",
@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node", "mocha"]
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../src/**/*.ts"]
 }

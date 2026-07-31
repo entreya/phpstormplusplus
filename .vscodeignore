@@ -1,8 +1,14 @@
 .vscode/**
+.claude/**
 src/**
+test/**
+test-fixtures/**
+out-test/**
+.vscode-test/**
 node_modules/**
 tsconfig.json
 esbuild.js
 *.ts
 **/*.map
 .gitignore
+.gitmodules

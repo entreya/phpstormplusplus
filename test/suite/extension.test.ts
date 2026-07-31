@@ -1,8 +1,13 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { searchFileContents, looksLikeTextFile } from '../../src/language/searchEverywhere';
+import { tokenizePhp } from '../../src/language/previewPanel';
 
-const fixtures = path.resolve(__dirname, '../../test-fixtures');
+// Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
+// directly for unit tests), so this file lands at out-test/test/suite/... —
+// one level deeper than before — hence the extra "..".
+const fixtures = path.resolve(__dirname, '../../../test-fixtures');
 
 async function openDoc(relPath: string): Promise<vscode.TextDocument> {
   const doc = await vscode.workspace.openTextDocument(path.join(fixtures, relPath));
@@ -100,6 +105,20 @@ suite('PHPStorm++ extension', () => {
     assert.ok(labels.includes('fore'), `expected "fore" live template among completions, got: ${labels.join(', ')}`);
   });
 
+  test('"vecho" Live Template snippet body has correctly escaped $ signs', async () => {
+    const doc = await openDoc('src/Usage.php');
+    const position = new vscode.Position(0, 0);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      position
+    )) as vscode.CompletionList;
+    const item = list.items.find((i) => (typeof i.label === 'string' ? i.label : i.label.label) === 'vecho');
+    assert.ok(item, 'expected a "vecho" live template completion item');
+    const snippet = item!.insertText as vscode.SnippetString;
+    assert.strictEqual(snippet.value, "echo '<pre>';\nvar_dump(\\$${1:var});\ndie;");
+  });
+
   test('Yii2 module detects the fixture project and navigates view -> controller', async () => {
     const doc = await openDoc('views/site/index.php');
     void doc;
@@ -179,9 +198,102 @@ suite('PHPStorm++ extension', () => {
   test('Search Everywhere command is registered and opens without throwing', async () => {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes('phpstormpp.searchEverywhere'), 'expected phpstormpp.searchEverywhere to be a registered command');
+    assert.ok(
+      commands.includes('phpstormpp.preview.focus'),
+      'expected the preview webview view to be registered (auto-generated .focus command)'
+    );
 
+    const tabsBefore = vscode.window.tabGroups.all.flatMap((g) => g.tabs).length;
     await vscode.commands.executeCommand('phpstormpp.searchEverywhere');
     await new Promise((r) => setTimeout(r, 200));
+    const tabsAfterOpen = vscode.window.tabGroups.all.flatMap((g) => g.tabs).length;
+    assert.strictEqual(tabsAfterOpen, tabsBefore, 'opening Search Everywhere should not create any editor tabs by itself');
+
     await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+  });
+
+  test('New PHP Class fills in the PSR-4-resolved namespace and declaration', async () => {
+    const targetDir = vscode.Uri.file(path.join(fixtures, 'src'));
+    const createdUri = vscode.Uri.file(path.join(fixtures, 'src', 'OrderService.php'));
+
+    const originalQuickPick = vscode.window.showQuickPick;
+    const originalInputBox = vscode.window.showInputBox;
+    (vscode.window as any).showQuickPick = async () => 'Class';
+    (vscode.window as any).showInputBox = async () => 'OrderService';
+    try {
+      await vscode.commands.executeCommand('phpstormpp.newPhpClass', targetDir);
+    } finally {
+      (vscode.window as any).showQuickPick = originalQuickPick;
+      (vscode.window as any).showInputBox = originalInputBox;
+    }
+
+    await new Promise((r) => setTimeout(r, 200));
+    const bytes = await vscode.workspace.fs.readFile(createdUri);
+    const text = Buffer.from(bytes).toString('utf8');
+    assert.match(text, /namespace App;/, `expected "namespace App;" in generated file, got:\n${text}`);
+    assert.match(text, /class OrderService/, `expected "class OrderService" in generated file, got:\n${text}`);
+
+    await vscode.workspace.fs.delete(createdUri);
+  });
+
+  test('creating an empty PascalCase .php file auto-fills namespace and class declaration', async () => {
+    const createdUri = vscode.Uri.file(path.join(fixtures, 'src', 'InvoiceService.php'));
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.createFile(createdUri);
+    await vscode.workspace.applyEdit(edit);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const bytes = await vscode.workspace.fs.readFile(createdUri);
+    const text = Buffer.from(bytes).toString('utf8');
+    assert.match(text, /namespace App;/, `expected auto-filled namespace, got:\n${text}`);
+    assert.match(text, /class InvoiceService/, `expected auto-filled class declaration, got:\n${text}`);
+
+    await vscode.workspace.fs.delete(createdUri);
+  });
+
+  test('content search finds a string literal that no file/class/method name matches', async () => {
+    const targetUri = vscode.Uri.file(path.join(fixtures, 'src', 'RelativeGradingFunctionRouter.php'));
+    assert.ok(looksLikeTextFile(targetUri), 'expected a .php file to be recognized as text-searchable');
+
+    const candidateFiles = await vscode.workspace.findFiles('**/*.php', '**/vendor/**');
+    const matches = await searchFileContents('Response not success from the RelativeGradingFunctionRouter', candidateFiles);
+
+    const hit = matches.find((m) => m.uri?.fsPath === targetUri.fsPath);
+    assert.ok(hit, `expected a content match in RelativeGradingFunctionRouter.php, got matches in: ${matches.map((m) => m.description).join(', ')}`);
+    assert.strictEqual(hit!.range?.start.line, 8, 'expected the match to be on the line containing the string literal');
+  });
+
+  test('preview panel PHP tokenizer classifies keywords, strings, variables, and comments', () => {
+    const tokens = tokenizePhp("// a comment\nclass Foo { public function bar() { return 'hi ' . $baz; } }");
+    const byText2 = (text: string) => tokens.find((t) => t.text === text);
+    assert.strictEqual(byText2("'hi '")?.cls, 'str', 'expected the string literal to be classified as a string');
+    const byText = (text: string) => tokens.find((t) => t.text === text);
+
+    assert.strictEqual(byText('// a comment')?.cls, 'cm', 'expected the line comment to be classified as a comment');
+    assert.strictEqual(byText('class')?.cls, 'kw', 'expected "class" to be classified as a keyword');
+    assert.strictEqual(byText('public')?.cls, 'kw', 'expected "public" to be classified as a keyword');
+    assert.strictEqual(byText('$baz')?.cls, 'var', 'expected "$baz" to be classified as a variable');
+    assert.strictEqual(byText('Foo')?.cls, undefined, 'expected the class name itself to be left unclassified (not a keyword)');
+  });
+
+  test('Check for Updates command is registered and never throws (network optional)', async function () {
+    this.timeout(15000);
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('phpstormpp.checkForUpdates'), 'expected phpstormpp.checkForUpdates to be a registered command');
+
+    // If a newer release genuinely exists, the real command awaits a user choice
+    // via showInformationMessage — mock it so the test can't hang on that in a
+    // headless run, regardless of what GitHub currently reports as latest.
+    const originalInfo = vscode.window.showInformationMessage;
+    const originalWarn = vscode.window.showWarningMessage;
+    (vscode.window as any).showInformationMessage = async () => undefined;
+    (vscode.window as any).showWarningMessage = async () => undefined;
+    try {
+      await vscode.commands.executeCommand('phpstormpp.checkForUpdates');
+    } finally {
+      (vscode.window as any).showInformationMessage = originalInfo;
+      (vscode.window as any).showWarningMessage = originalWarn;
+    }
   });
 });

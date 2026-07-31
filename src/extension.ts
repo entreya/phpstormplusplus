@@ -20,12 +20,21 @@ import { ImportCodeActionProvider } from './refactor/importCodeActions';
 import { optimizeImports } from './refactor/importManager';
 import { registerSearchEverywhere } from './language/searchEverywhere';
 import { detectFrameworks } from './frameworks/genericDetector';
+import { newPhpClass, registerAutoClassOnCreate } from './refactor/newPhpClass';
+import { PreviewViewProvider } from './language/previewPanel';
+import { checkForUpdates } from './updateChecker';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const index = new PhpIndex();
   context.subscriptions.push(index);
+
+  const currentVersion = context.extension.packageJSON.version as string;
+  void checkForUpdates(context, currentVersion, false);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('phpstormpp.checkForUpdates', () => checkForUpdates(context, currentVersion, true))
+  );
 
   const { scanned } = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing project PHP files' },
@@ -163,7 +172,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const frameworkDisposables = await activateFrameworkModules(context, index);
   context.subscriptions.push(...frameworkDisposables);
 
-  context.subscriptions.push(registerSearchEverywhere(index));
+  const previewProvider = new PreviewViewProvider();
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(PreviewViewProvider.viewId, previewProvider),
+    registerSearchEverywhere(index, previewProvider)
+  );
+
+  context.subscriptions.push(
+    registerAutoClassOnCreate(),
+    vscode.commands.registerCommand('phpstormpp.newPhpClass', (uri?: vscode.Uri) => newPhpClass(uri))
+  );
 }
 
 export function deactivate(): void {

@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.3.1",
+  "version": "0.6.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -84,6 +84,14 @@
       {
         "command": "phpstormpp.searchEverywhere",
         "title": "PHPStorm++: Search Everywhere"
+      },
+      {
+        "command": "phpstormpp.newPhpClass",
+        "title": "PHPStorm++: New PHP Class..."
+      },
+      {
+        "command": "phpstormpp.checkForUpdates",
+        "title": "PHPStorm++: Check for Updates"
       }
     ],
     "submenus": [
@@ -93,6 +101,13 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "phpstormpp.newPhpClass",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@1"
+        }
+      ],
       "editor/context": [
         {
           "submenu": "phpstormpp.refactorMenu",
@@ -151,6 +166,13 @@
           "id": "phpstormpp.database",
           "name": "Database"
         }
+      ],
+      "phpstormppPreviewPanel": [
+        {
+          "id": "phpstormpp.preview",
+          "name": "Search Everywhere Preview",
+          "type": "webview"
+        }
       ]
     },
     "viewsContainers": {
@@ -158,6 +180,13 @@
         {
           "id": "phpstormpp",
           "title": "PHPStorm++",
+          "icon": "resources/db.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "phpstormppPreviewPanel",
+          "title": "PHPStorm++ Preview",
           "icon": "resources/db.svg"
         }
       ]
@@ -735,7 +764,7 @@
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit -p ./",
     "pretest": "node esbuild.js && tsc -p test",
-    "test": "node out-test/runTest.js",
+    "test": "node out-test/test/runTest.js",
     "package": "vsce package"
   },
   "devDependencies": {
