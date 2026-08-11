@@ -158,6 +158,49 @@ suite('PHPStorm++ extension', () => {
     assert.match(item!.additionalTextEdits![0].newText, /use App\\Models\\Greeter;/);
   });
 
+  test('go to definition on an ambiguous class name deterministically resolves the same candidate every time', async () => {
+    const doc = await openDoc('src/AmbiguousNotifierUsage.php');
+    const text = doc.getText();
+    const position = doc.positionAt(text.indexOf('new Notifier') + 'new Notifier'.length);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const locations = (await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        doc.uri,
+        position
+      )) as vscode.Location[];
+      assert.strictEqual(locations.length, 1, `expected exactly one definition location on attempt ${attempt}`);
+      assert.match(
+        locations[0].uri.fsPath,
+        /[\\/]src[\\/]Notifier\.php$/,
+        `expected the ambiguous "Notifier" reference to always resolve to src/Notifier.php (App\\Models\\Notifier, alphabetically first), got: ${locations[0].uri.fsPath}`
+      );
+    }
+  });
+
+  test('pasting code that references an unambiguous class auto-adds the use statement', async () => {
+    const doc = await openDoc('src/PasteTarget.php');
+    const editor = await vscode.window.showTextDocument(doc);
+    const text = editor.document.getText();
+    const braceIndex = text.indexOf('{', text.indexOf('run(): void'));
+    const position = editor.document.positionAt(braceIndex + 2); // start of the blank line inside the method body
+    editor.selection = new vscode.Selection(position, position);
+
+    const originalClipboard = await vscode.env.clipboard.readText();
+    try {
+      await vscode.env.clipboard.writeText('$g = new Greeter();');
+      await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
+      await new Promise((r) => setTimeout(r, 300));
+
+      const newText = editor.document.getText();
+      assert.match(newText, /use App\\Models\\Greeter;/, `expected a paste-triggered auto-import, got:\n${newText}`);
+      assert.match(newText, /\$g = new Greeter\(\);/, 'expected the pasted text itself to still be inserted');
+    } finally {
+      await vscode.commands.executeCommand('undo');
+      await vscode.env.clipboard.writeText(originalClipboard);
+    }
+  });
+
   test('unused imports are flagged and removable via quick fix', async () => {
     const doc = await openDoc('src/UnusedImport.php');
     await new Promise((r) => setTimeout(r, 800));

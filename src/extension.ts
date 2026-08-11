@@ -24,6 +24,7 @@ import { newPhpClass, registerAutoClassOnCreate } from './refactor/newPhpClass';
 import { PreviewViewProvider } from './language/previewPanel';
 import { checkForUpdates } from './updateChecker';
 import { registerCommandCenter } from './commandCenter';
+import { PasteImportProvider } from './language/pasteImportProvider';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
@@ -96,6 +97,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerCompletionItemProvider(PHP_SELECTOR, new LiveTemplateCompletionProvider()),
     vscode.languages.registerCodeActionsProvider(PHP_SELECTOR, new ImportCodeActionProvider(index), {
       providedCodeActionKinds: ImportCodeActionProvider.providedCodeActionKinds
+    }),
+    vscode.languages.registerDocumentPasteEditProvider(PHP_SELECTOR, new PasteImportProvider(index), {
+      providedPasteEditKinds: [vscode.DocumentDropOrPasteEditKind.TextUpdateImports.append('php')],
+      pasteMimeTypes: ['text/plain']
     })
   );
 

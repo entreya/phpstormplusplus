@@ -155,8 +155,20 @@ export class PhpIndex implements vscode.Disposable {
       const nsQualified = this.classesByFqcn.get(`${fromFile.namespace}\\${clean}`);
       if (nsQualified) return nsQualified;
     }
+    // Per PHP's own resolution rules, an unqualified name with no matching `use`
+    // and no match in the current namespace refers to the global namespace —
+    // not an arbitrarily-chosen same-named class from somewhere else entirely.
+    const global = this.classesByFqcn.get(clean);
+    if (global) return global;
+
+    // Last-resort best-effort guess for navigation convenience (e.g. code
+    // referencing a class it forgot to `use`). Sorted for determinism — this
+    // used to be `candidates[0]`, which depended on indexing/scan order and
+    // could silently point at a different same-named class between sessions.
     const candidates = this.classesByName.get(clean);
-    if (candidates && candidates.length) return candidates[0];
+    if (candidates && candidates.length) {
+      return [...candidates].sort((a, b) => a.fqcn.localeCompare(b.fqcn))[0];
+    }
     return undefined;
   }
 
