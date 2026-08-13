@@ -200,12 +200,7 @@ export default function App(): React.ReactElement {
               }
               titleRender={(node) => (
                 <Dropdown menu={{ items: contextMenuFor(node) }} trigger={['contextMenu']}>
-                  <span
-                    title={String(node.title)}
-                    style={{ display: 'block', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    {node.title as React.ReactNode}
-                  </span>
+                  <span title={String(node.title)}>{node.title as React.ReactNode}</span>
                 </Dropdown>
               )}
             />

@@ -99,6 +99,20 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: var(--vscode-sideBar-background); color: var(--vscode-sideBar-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   #root { height: 100%; }
+
+  /* antd's Tree never gives .ant-tree-node-content-wrapper display:flex itself —
+     it relies on the icon being inline-block and the title being plain inline
+     content to sit side by side. Our own titleRender content doesn't meet that
+     by default, and antd's own CSS-in-JS injection is not something we want a
+     hard runtime dependency on inside a webview. These rules make the icon/
+     title layout correct unconditionally, regardless of what antd's own
+     styles do or don't apply here. */
+  .ant-tree-treenode { display: flex !important; align-items: center !important; }
+  .ant-tree-switcher { display: flex !important; align-items: center !important; justify-content: center !important; flex: none !important; }
+  .ant-tree-checkbox { flex-shrink: 0 !important; }
+  .ant-tree-node-content-wrapper { display: flex !important; align-items: center !important; flex: auto !important; min-width: 0 !important; }
+  .ant-tree-iconEle { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: none !important; }
+  .ant-tree-title { display: inline-block !important; flex: auto !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
 </style>
 </head>
 <body>
