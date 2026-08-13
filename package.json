@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -68,6 +68,11 @@
       {
         "command": "phpstormpp.database.newQuery",
         "title": "PHPStorm++: New Query Console"
+      },
+      {
+        "command": "phpstormpp.openTerminal",
+        "title": "PHPStorm++: Open Terminal",
+        "icon": "$(terminal)"
       },
       {
         "command": "phpstormpp.yii2.goToController",
@@ -153,14 +158,19 @@
       ],
       "view/title": [
         {
+          "command": "phpstormpp.openTerminal",
+          "when": "view == phpstormpp.database",
+          "group": "navigation@0"
+        },
+        {
           "command": "phpstormpp.database.addConnection",
           "when": "view == phpstormpp.database",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "phpstormpp.database.newQuery",
           "when": "view == phpstormpp.database",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ]
     },

@@ -9,6 +9,18 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LAST_CHECK_KEY = 'phpstormpp.lastUpdateCheck';
 const DISMISSED_VERSION_KEY = 'phpstormpp.dismissedUpdateVersion';
 
+// A prior debugging session found this whole flow silently produced no
+// visible trace (no globalState write, no notification, no error dialog) —
+// which usually means a failure got swallowed somewhere with nothing to show
+// for it. Logging every step to a real output channel (View > Output >
+// PHPStorm++) turns any future silent failure into something diagnosable
+// instead of another dead end.
+let outputChannel: vscode.OutputChannel | undefined;
+function log(message: string): void {
+  if (!outputChannel) outputChannel = vscode.window.createOutputChannel('PHPStorm++');
+  outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
+}
+
 interface ReleaseInfo {
   version: string;
   htmlUrl: string;
@@ -72,9 +84,13 @@ async function fetchLatestRelease(): Promise<ReleaseInfo | undefined> {
     const json = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
     const asset = (json.assets ?? []).find((a: any) => typeof a.name === 'string' && a.name.endsWith('.vsix'));
     const version = String(json.tag_name ?? '').replace(/^v/, '');
-    if (!version) return undefined;
+    if (!version) {
+      log(`fetchLatestRelease: response had no usable tag_name: ${JSON.stringify(json).slice(0, 300)}`);
+      return undefined;
+    }
     return { version, htmlUrl: json.html_url, vsixUrl: asset?.browser_download_url, vsixName: asset?.name };
-  } catch {
+  } catch (e: any) {
+    log(`fetchLatestRelease failed: ${e?.stack ?? e}`);
     return undefined;
   }
 }
@@ -107,36 +123,53 @@ async function downloadAndInstall(release: ReleaseInfo): Promise<void> {
  * even "you're up to date".
  */
 export async function checkForUpdates(context: vscode.ExtensionContext, currentVersion: string, manual: boolean): Promise<void> {
-  if (!manual) {
-    const lastCheck = context.globalState.get<number>(LAST_CHECK_KEY, 0);
-    if (Date.now() - lastCheck < CHECK_INTERVAL_MS) return;
-  }
-  await context.globalState.update(LAST_CHECK_KEY, Date.now());
+  try {
+    log(`checkForUpdates start (manual=${manual}, currentVersion=${currentVersion})`);
+    if (!manual) {
+      const lastCheck = context.globalState.get<number>(LAST_CHECK_KEY, 0);
+      const sinceLast = Date.now() - lastCheck;
+      if (sinceLast < CHECK_INTERVAL_MS) {
+        log(`skipped: throttled, last checked ${Math.round(sinceLast / 60000)} min ago`);
+        return;
+      }
+    }
+    await context.globalState.update(LAST_CHECK_KEY, Date.now());
 
-  const release = await fetchLatestRelease();
-  if (!release) {
-    if (manual) vscode.window.showWarningMessage('PHPStorm++: could not check for updates (no network, or no releases published yet).');
-    return;
-  }
+    const release = await fetchLatestRelease();
+    if (!release) {
+      log('no release info available — see any fetchLatestRelease error above');
+      if (manual) vscode.window.showWarningMessage('PHPStorm++: could not check for updates (no network, or no releases published yet).');
+      return;
+    }
+    log(`latest release: v${release.version}`);
 
-  if (compareVersions(release.version, currentVersion) <= 0) {
-    if (manual) vscode.window.showInformationMessage(`PHPStorm++: you're up to date (v${currentVersion}).`);
-    return;
-  }
+    if (compareVersions(release.version, currentVersion) <= 0) {
+      log('already up to date');
+      if (manual) vscode.window.showInformationMessage(`PHPStorm++: you're up to date (v${currentVersion}).`);
+      return;
+    }
 
-  if (!manual && context.globalState.get<string>(DISMISSED_VERSION_KEY) === release.version) return;
+    if (!manual && context.globalState.get<string>(DISMISSED_VERSION_KEY) === release.version) {
+      log(`skipped: v${release.version} was already dismissed`);
+      return;
+    }
 
-  const actions = release.vsixUrl ? ['Download && Install', 'View Release', 'Not Now'] : ['View Release', 'Not Now'];
-  const choice = await vscode.window.showInformationMessage(
-    `PHPStorm++ v${release.version} is available (you have v${currentVersion}).`,
-    ...actions
-  );
+    log(`prompting: v${release.version} available`);
+    const actions = release.vsixUrl ? ['Download && Install', 'View Release', 'Not Now'] : ['View Release', 'Not Now'];
+    const choice = await vscode.window.showInformationMessage(
+      `PHPStorm++ v${release.version} is available (you have v${currentVersion}).`,
+      ...actions
+    );
+    log(`user chose: ${choice ?? '(dismissed)'}`);
 
-  if (choice === 'View Release') {
-    void vscode.env.openExternal(vscode.Uri.parse(release.htmlUrl));
-  } else if (choice === 'Download && Install') {
-    await downloadAndInstall(release);
-  } else {
-    await context.globalState.update(DISMISSED_VERSION_KEY, release.version);
+    if (choice === 'View Release') {
+      void vscode.env.openExternal(vscode.Uri.parse(release.htmlUrl));
+    } else if (choice === 'Download && Install') {
+      await downloadAndInstall(release);
+    } else {
+      await context.globalState.update(DISMISSED_VERSION_KEY, release.version);
+    }
+  } catch (e: any) {
+    log(`checkForUpdates threw: ${e?.stack ?? e}`);
   }
 }

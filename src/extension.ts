@@ -204,6 +204,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand('phpstormpp.database.runQuery', async (node?: { data?: { config?: any } }) => {
       if (node?.data?.config) openQueryPanel(connections, node.data.config);
+    }),
+    vscode.commands.registerCommand('phpstormpp.openTerminal', () => {
+      // Reuse the existing "PHPStorm++" terminal if one's already open, like
+      // PhpStorm's own Terminal tool window button, rather than piling up a
+      // fresh one on every click.
+      const existing = vscode.window.terminals.find((t) => t.name === 'PHPStorm++');
+      const terminal = existing ?? vscode.window.createTerminal('PHPStorm++');
+      terminal.show();
     })
   );
 

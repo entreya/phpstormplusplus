@@ -38,6 +38,7 @@ function buildItems(): (CenterItem | vscode.QuickPickItem)[] {
     separator('Database'),
     { label: '$(database) Add Database Connection...', action: run('phpstormpp.database.addConnection') },
     { label: '$(terminal) New Query Console', action: run('phpstormpp.database.newQuery') },
+    { label: '$(terminal) Open Terminal', description: 'Also available as a button on the PHPStorm++ panel', action: run('phpstormpp.openTerminal') },
 
     separator('Yii2'),
     { label: '$(arrow-right) Go to Controller', action: run('phpstormpp.yii2.goToController') },
