@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ConfigProvider, theme as antdTheme, Tree, Dropdown, Modal, Input, Button, Space, Typography, message } from 'antd';
-import type { DataNode } from 'antd/es/tree';
+import { FolderOutlined, FileOutlined } from '@ant-design/icons';
+import type { DataNode, EventDataNode } from 'antd/es/tree';
 import type { MenuProps } from 'antd';
 import { onExtensionMessage, postToExtension } from './vscodeApi';
 import type { FileEntry } from './protocol';
@@ -10,7 +11,12 @@ function isDarkTheme(): boolean {
 }
 
 function toNode(entry: FileEntry): DataNode {
-  return { key: entry.path, title: entry.name, isLeaf: !entry.isDirectory };
+  return {
+    key: entry.path,
+    title: entry.name,
+    isLeaf: !entry.isDirectory,
+    icon: entry.isDirectory ? <FolderOutlined /> : <FileOutlined />
+  };
 }
 
 /** Replaces the children of the node with the given key, anywhere in the tree. */
@@ -28,6 +34,12 @@ interface PromptState {
   resolve: (value: string | undefined) => void;
 }
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  node: DataNode;
+}
+
 export default function App(): React.ReactElement {
   const [dark] = useState(isDarkTheme());
   const [rootPath, setRootPath] = useState<string>();
@@ -35,6 +47,7 @@ export default function App(): React.ReactElement {
   const [error, setError] = useState<string>();
   const [prompt, setPrompt] = useState<PromptState>();
   const [promptValue, setPromptValue] = useState('');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const pendingLoads = useRef(new Map<string, () => void>());
 
   useEffect(() => {
@@ -42,7 +55,7 @@ export default function App(): React.ReactElement {
       switch (msg.type) {
         case 'root':
           setRootPath(msg.path);
-          setTreeData([{ key: msg.path, title: msg.name }]);
+          setTreeData([{ key: msg.path, title: msg.name, icon: <FolderOutlined /> }]);
           postToExtension({ type: 'listDir', path: msg.path });
           break;
         case 'dirListing': {
@@ -173,15 +186,26 @@ export default function App(): React.ReactElement {
               treeData={treeData}
               loadData={loadData}
               onSelect={onSelect}
+              showIcon
               defaultExpandedKeys={[rootPath]}
-              titleRender={(node) => (
-                <Dropdown menu={{ items: contextMenuFor(node) }} trigger={['contextMenu']}>
-                  <span>{node.title as React.ReactNode}</span>
-                </Dropdown>
-              )}
+              onRightClick={({ event, node }) => {
+                event.preventDefault();
+                setContextMenu({ x: event.clientX, y: event.clientY, node });
+              }}
             />
           </div>
         )}
+
+        {/* A zero-size anchor positioned at the cursor, rather than wrapping every
+            row's title in a Dropdown — keeps antd's switcher/icon/label layout intact. */}
+        <Dropdown
+          open={!!contextMenu}
+          onOpenChange={(open) => !open && setContextMenu(undefined)}
+          menu={{ items: contextMenu ? contextMenuFor(contextMenu.node) : [] }}
+          trigger={[]}
+        >
+          <div style={{ position: 'fixed', left: contextMenu?.x ?? 0, top: contextMenu?.y ?? 0, width: 0, height: 0 }} />
+        </Dropdown>
 
         <Modal
           title={prompt?.title}
