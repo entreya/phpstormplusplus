@@ -11,9 +11,7 @@ import { extractMethod } from './refactor/extractMethod';
 import { generateConstructor, generateGettersSetters } from './refactor/generateMembers';
 import { generatePhpDoc } from './refactor/phpDocGenerator';
 import { LiveTemplateCompletionProvider } from './templates/templateCompletionProvider';
-import { ConnectionManager, promptNewConnection } from './database/connectionManager';
-import { DatabaseTreeProvider } from './database/treeDataProvider';
-import { openQueryPanel } from './database/queryPanel';
+import { EmptyTreeProvider } from './terminalPanelView';
 import { activateFrameworkModules } from './frameworks/frameworkRegistry';
 import { createImportDiagnostics } from './language/importDiagnostics';
 import { ImportCodeActionProvider } from './refactor/importCodeActions';
@@ -175,36 +173,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  const connections = new ConnectionManager(context);
-  context.subscriptions.push(connections);
-  const dbTree = new DatabaseTreeProvider(connections);
-  context.subscriptions.push(vscode.window.registerTreeDataProvider('phpstormpp.database', dbTree));
+  context.subscriptions.push(vscode.window.registerTreeDataProvider('phpstormpp.main', new EmptyTreeProvider()));
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('phpstormpp.database.addConnection', async () => {
-      const result = await promptNewConnection();
-      if (!result) return;
-      await connections.addConnection(result.config, result.password);
-      dbTree.refresh();
-    }),
-    vscode.commands.registerCommand('phpstormpp.database.newQuery', async (node?: { data?: { config?: any } }) => {
-      const configs = connections.listConnections();
-      if (!configs.length) {
-        vscode.window.showWarningMessage('PHPStorm++: add a database connection first.');
-        return;
-      }
-      const config =
-        node?.data?.config ??
-        (await vscode.window.showQuickPick(
-          configs.map((c) => ({ label: c.name, config: c })),
-          { title: 'Choose connection' }
-        ).then((r) => r?.config));
-      if (!config) return;
-      openQueryPanel(connections, config);
-    }),
-    vscode.commands.registerCommand('phpstormpp.database.runQuery', async (node?: { data?: { config?: any } }) => {
-      if (node?.data?.config) openQueryPanel(connections, node.data.config);
-    }),
     vscode.commands.registerCommand('phpstormpp.openTerminal', () => {
       // Reuse the existing "PHPStorm++" terminal if one's already open, like
       // PhpStorm's own Terminal tool window button, rather than piling up a

@@ -35,9 +35,6 @@ function buildItems(): (CenterItem | vscode.QuickPickItem)[] {
     { label: '$(symbol-method) Extract Method', action: run('phpstormpp.extractMethod') },
     { label: '$(list-tree) Optimize Imports', action: run('phpstormpp.optimizeImports') },
 
-    separator('Database'),
-    { label: '$(database) Add Database Connection...', action: run('phpstormpp.database.addConnection') },
-    { label: '$(terminal) New Query Console', action: run('phpstormpp.database.newQuery') },
     { label: '$(terminal) Open Terminal', description: 'Also available as a button on the PHPStorm++ panel', action: run('phpstormpp.openTerminal') },
 
     separator('Yii2'),

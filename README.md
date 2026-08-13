@@ -1,8 +1,8 @@
 # PHPStorm++
 
 A VS Code extension bringing PhpStorm-style PHP tooling into VS Code: code
-intelligence, refactorings, Live Templates, an Xdebug debugger, a database
-explorer, and pluggable framework support (Yii2 first).
+intelligence, refactorings, Live Templates, an Xdebug debugger, and
+pluggable framework support (Yii2 first).
 
 **This is not a claim of 1:1 PhpStorm parity.** PhpStorm is a commercial IDE
 with a 15+ year, multi-million-line codebase. This extension implements a
@@ -18,7 +18,6 @@ below for what's intentionally out of scope for now.
 | **Refactoring** | Extract Variable, Extract Method (heuristic parameter inference), Generate Constructor, Generate Getters/Setters, Generate PHPDoc, and cross-file Rename Symbol. |
 | **Live Templates** | PhpStorm-style abbreviation snippets (`fore`, `iff`, `try`, `pubf`, `docb`, ...) plus a `phpstormpp.liveTemplates` setting for your own. |
 | **Debugging** | A DAP server that speaks Xdebug's DBGp protocol directly over TCP (`src/debug`) — breakpoints, step in/over/out, call stack, scopes/variables, watch/eval. No dependency on any existing PHP debug extension. |
-| **Database tools** | Tree view + query console for MySQL and PostgreSQL, built on `mysql2`/`pg` directly (own connection manager, own webview grid). |
 | **Framework support** | A pluggable `FrameworkModule` API (`src/frameworks`). Yii2 ships first: project detection via `composer.json`, and Controller ↔ View navigation following Yii2's `controllerId`/`actionId` conventions. Add another framework by implementing the interface in `src/frameworks/types.ts` — nothing else needs to change. |
 
 All of the above is exercised by an automated test suite that runs in a real
@@ -51,7 +50,6 @@ src/language/    hover, go-to-definition, find references, completion, document/
 src/refactor/    rename, extract variable/method, generate constructor/getters-setters, PHPDoc
 src/templates/   Live Templates engine + default template set
 src/debug/       DBGp protocol client + DAP debug adapter for Xdebug
-src/database/    connection manager, MySQL/Postgres drivers, tree view, query webview
 src/frameworks/  FrameworkModule plugin API + Yii2 module
 test/            @vscode/test-electron suite (real Extension Development Host tests)
 test-fixtures/   sample PHP project used by the test suite and by `Run Extension` (F5)

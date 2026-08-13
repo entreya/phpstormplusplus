@@ -1,8 +1,8 @@
 {
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
-  "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, a database explorer, and pluggable framework support (starting with Yii2).",
-  "version": "0.9.0",
+  "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, and pluggable framework support (starting with Yii2).",
+  "version": "0.10.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -56,18 +56,6 @@
       {
         "command": "phpstormpp.generate",
         "title": "PHPStorm++: Generate..."
-      },
-      {
-        "command": "phpstormpp.database.addConnection",
-        "title": "PHPStorm++: Add Database Connection"
-      },
-      {
-        "command": "phpstormpp.database.runQuery",
-        "title": "PHPStorm++: Run Query"
-      },
-      {
-        "command": "phpstormpp.database.newQuery",
-        "title": "PHPStorm++: New Query Console"
       },
       {
         "command": "phpstormpp.openTerminal",
@@ -159,26 +147,16 @@
       "view/title": [
         {
           "command": "phpstormpp.openTerminal",
-          "when": "view == phpstormpp.database",
+          "when": "view == phpstormpp.main",
           "group": "navigation@0"
-        },
-        {
-          "command": "phpstormpp.database.addConnection",
-          "when": "view == phpstormpp.database",
-          "group": "navigation@1"
-        },
-        {
-          "command": "phpstormpp.database.newQuery",
-          "when": "view == phpstormpp.database",
-          "group": "navigation@2"
         }
       ]
     },
     "views": {
       "phpstormpp": [
         {
-          "id": "phpstormpp.database",
-          "name": "Database"
+          "id": "phpstormpp.main",
+          "name": "PHPStorm++"
         }
       ],
       "phpstormppPreviewPanel": [
@@ -189,19 +167,25 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "phpstormpp.main",
+        "contents": "[Open Terminal](command:phpstormpp.openTerminal)\n[Open Command Center](command:phpstormpp.openCommandCenter)"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "phpstormpp",
           "title": "PHPStorm++",
-          "icon": "resources/db.svg"
+          "icon": "resources/terminal.svg"
         }
       ],
       "panel": [
         {
           "id": "phpstormppPreviewPanel",
           "title": "PHPStorm++ Preview",
-          "icon": "resources/db.svg"
+          "icon": "resources/preview.svg"
         }
       ]
     },
@@ -789,7 +773,6 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
-    "@types/pg": "^8.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/debugadapter": "^1.65.0",
     "@vscode/test-electron": "^3.1.0",
@@ -799,8 +782,6 @@
   },
   "dependencies": {
     "fast-xml-parser": "^5.10.1",
-    "mysql2": "^3.9.0",
-    "pg": "^8.11.3",
     "php-parser": "^3.1.5"
   }
 }
