@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { extractFileIndex } from './symbolExtractor';
 import { ClassSymbol, FileIndex, FunctionSymbol } from './symbols';
+import { CachedFileEntry, deserializeFileIndex, loadCache, saveCache, serializeFileIndex } from './indexCache';
 
 /**
  * Workspace-wide PHP symbol index. Rebuilds a file's symbols whenever it changes
@@ -19,19 +20,44 @@ export class PhpIndex implements vscode.Disposable {
 
   private static readonly VENDOR_EXCLUDE = '**/{node_modules,.git,vendor/**/{tests,Tests,test,Test,docs,doc,examples,example,bin}}/**';
 
+  /** Disk-persisted per-file cache (mtime + serialized FileIndex), so a fresh
+   * VS Code session can skip re-parsing files that haven't changed since the
+   * last one — the expensive part of indexing is parsing, not the file list. */
+  private diskCache = new Map<string, CachedFileEntry>();
+  private cacheDirty = false;
+
+  async loadDiskCache(storageDir: vscode.Uri | undefined): Promise<void> {
+    this.diskCache = storageDir ? await loadCache(storageDir) : new Map();
+  }
+
+  async flushDiskCache(storageDir: vscode.Uri | undefined): Promise<void> {
+    if (!storageDir || !this.cacheDirty) return;
+    await saveCache(storageDir, this.diskCache);
+    this.cacheDirty = false;
+  }
+
   private async scanFiles(
     uris: vscode.Uri[],
     progress?: vscode.Progress<{ message?: string; increment?: number }>,
     label = 'files',
     yieldEvery = 40
-  ): Promise<number> {
+  ): Promise<{ scanned: number; fromCache: number }> {
     let done = 0;
+    let fromCache = 0;
     for (const uri of uris) {
+      const key = uri.toString();
       try {
-        // Reads raw bytes rather than opening each file as a live vscode.TextDocument —
-        // much lighter when vendor/ has thousands of files.
-        const bytes = await vscode.workspace.fs.readFile(uri);
-        this.applyFileIndex(uri.toString(), Buffer.from(bytes).toString('utf8'), 0, false);
+        const stat = await vscode.workspace.fs.stat(uri);
+        const cached = this.diskCache.get(key);
+        if (cached && cached.mtimeMs === stat.mtime) {
+          this.indexParsedFile(deserializeFileIndex(cached.data), false);
+          fromCache++;
+        } else {
+          // Reads raw bytes rather than opening each file as a live vscode.TextDocument —
+          // much lighter when vendor/ has thousands of files.
+          const bytes = await vscode.workspace.fs.readFile(uri);
+          this.applyFileIndex(key, Buffer.from(bytes).toString('utf8'), 0, false, stat.mtime);
+        }
       } catch {
         // unreadable file, skip
       }
@@ -44,16 +70,18 @@ export class PhpIndex implements vscode.Disposable {
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
-    return done;
+    return { scanned: done, fromCache };
   }
 
   /** Fast foreground scan of the project's own PHP files (vendor/ excluded). Small
    * and quick enough on any real project to await directly during activation. */
-  async indexWorkspace(progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<{ scanned: number }> {
+  async indexWorkspace(
+    progress?: vscode.Progress<{ message?: string; increment?: number }>
+  ): Promise<{ scanned: number; fromCache: number }> {
     const uris = await vscode.workspace.findFiles('**/*.php', '**/{node_modules,.git,vendor}/**');
-    const scanned = await this.scanFiles(uris, progress, 'project files');
+    const result = await this.scanFiles(uris, progress, 'project files');
     this._onDidReindex.fire();
-    return { scanned };
+    return result;
   }
 
   /**
@@ -61,12 +89,14 @@ export class PhpIndex implements vscode.Disposable {
    * yielding batches, firing onDidReindex as it goes so completion/hover pick up
    * newly-discovered classes progressively. Never awaited by activate() — a huge
    * vendor tree takes longer, but no longer blocks startup or the editor at all.
+   * Unchanged vendor files (the common case — dependencies rarely change) load
+   * straight from the disk cache instead of being re-parsed.
    */
-  async indexVendorInBackground(onDone?: (scanned: number) => void): Promise<void> {
+  async indexVendorInBackground(onDone?: (scanned: number, fromCache: number) => void): Promise<void> {
     const uris = await vscode.workspace.findFiles('vendor/**/*.php', PhpIndex.VENDOR_EXCLUDE);
-    const scanned = await this.scanFiles(uris, undefined, 'vendor/');
+    const result = await this.scanFiles(uris, undefined, 'vendor/');
     this._onDidReindex.fire();
-    onDone?.(scanned);
+    onDone?.(result.scanned, result.fromCache);
   }
 
   indexDocument(document: vscode.TextDocument, notify = true): void {
@@ -74,9 +104,22 @@ export class PhpIndex implements vscode.Disposable {
     this.applyFileIndex(document.uri.toString(), document.getText(), document.version, notify);
   }
 
-  private applyFileIndex(key: string, text: string, version: number, notify: boolean): void {
+  private applyFileIndex(key: string, text: string, version: number, notify: boolean, mtimeMs?: number): void {
     const fresh = extractFileIndex(key, text, version);
     if (!fresh) return;
+    this.indexParsedFile(fresh, notify);
+    // Only cache files we actually know the real on-disk mtime for (the bulk
+    // scan path) — live-editing saves go through indexDocument, which doesn't
+    // have a fresh mtime handy and will simply be treated as "changed" (a
+    // cache miss) next session, which is correct and harmless.
+    if (mtimeMs !== undefined) {
+      this.diskCache.set(key, { mtimeMs, data: serializeFileIndex(fresh) });
+      this.cacheDirty = true;
+    }
+  }
+
+  private indexParsedFile(fresh: FileIndex, notify: boolean): void {
+    const key = fresh.uri;
     this.removeFileFromMaps(key);
     this.files.set(key, fresh);
     for (const cls of fresh.classes) {
@@ -94,8 +137,10 @@ export class PhpIndex implements vscode.Disposable {
   }
 
   removeFile(uri: vscode.Uri): void {
-    this.removeFileFromMaps(uri.toString());
-    this.files.delete(uri.toString());
+    const key = uri.toString();
+    this.removeFileFromMaps(key);
+    this.files.delete(key);
+    if (this.diskCache.delete(key)) this.cacheDirty = true;
     this._onDidReindex.fire();
   }
 

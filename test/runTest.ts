@@ -10,6 +10,10 @@ async function main() {
   const fixturesPath = path.resolve(__dirname, '../../test-fixtures');
 
   await runTests({
+    // Pinned rather than 'stable' — otherwise every run after a new VS Code
+    // release re-downloads a fresh ~300MB build instead of reusing the one
+    // already cached in .vscode-test/, which is all we actually need.
+    version: '1.131.0',
     extensionDevelopmentPath,
     extensionTestsPath,
     launchArgs: [fixturesPath, '--disable-extensions']

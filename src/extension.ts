@@ -28,9 +28,21 @@ import { PasteImportProvider } from './language/pasteImportProvider';
 
 const PHP_SELECTOR: vscode.DocumentSelector = { language: 'php', scheme: 'file' };
 
+// Held so deactivate() can flush any cache entries accumulated after the
+// last explicit flush (e.g. from files edited/saved during the session).
+let activeIndex: PhpIndex | undefined;
+let activeCacheDir: vscode.Uri | undefined;
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const index = new PhpIndex();
   context.subscriptions.push(index);
+
+  // Per-workspace cache directory for the parsed index — undefined when no
+  // workspace folder is open, in which case caching is simply skipped.
+  const cacheDir = context.storageUri;
+  activeIndex = index;
+  activeCacheDir = cacheDir;
+  await index.loadDiskCache(cacheDir);
 
   const currentVersion = context.extension.packageJSON.version as string;
   void checkForUpdates(context, currentVersion, false);
@@ -46,24 +58,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('phpstormpp.checkForUpdates', () => checkForUpdates(context, currentVersion, true))
   );
 
-  const { scanned } = await vscode.window.withProgress(
+  const { scanned, fromCache: projectFromCache } = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing project PHP files' },
     (progress) => index.indexWorkspace(progress)
   );
+  await index.flushDiskCache(cacheDir);
 
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
   const detected = workspaceRoot ? await detectFrameworks(workspaceRoot) : [];
   const detectedLabel = detected.length ? ` — detected ${detected.map((d) => d.name).join(', ')}` : '';
-  vscode.window.setStatusBarMessage(`PHPStorm++: indexed ${scanned} project files${detectedLabel}. Scanning vendor/ in the background...`, 6000);
+  const cacheLabel = projectFromCache > 0 ? ` (${projectFromCache} from cache)` : '';
+  vscode.window.setStatusBarMessage(
+    `PHPStorm++: indexed ${scanned} project files${cacheLabel}${detectedLabel}. Scanning vendor/ in the background...`,
+    6000
+  );
 
   // vendor/ (framework + dependency source) can be huge, so it's scanned in the
   // background in small yielding batches instead of blocking activation — see
   // PhpIndex.indexVendorInBackground. Autocomplete for deep vendor classes fills
-  // in progressively rather than being capped or gated behind a wait.
-  void index.indexVendorInBackground((vendorScanned) => {
+  // in progressively rather than being capped or gated behind a wait. Unchanged
+  // vendor files load straight from the disk cache instead of being re-parsed —
+  // by far the biggest win, since dependencies rarely change between sessions.
+  void index.indexVendorInBackground(async (vendorScanned, vendorFromCache) => {
     if (vendorScanned > 0) {
-      vscode.window.setStatusBarMessage(`PHPStorm++: finished indexing ${vendorScanned} vendor/ files (${index.allClasses().length} classes total).`, 6000);
+      const vendorCacheLabel = vendorFromCache > 0 ? ` (${vendorFromCache} from cache)` : '';
+      vscode.window.setStatusBarMessage(
+        `PHPStorm++: finished indexing ${vendorScanned} vendor/ files${vendorCacheLabel} (${index.allClasses().length} classes total).`,
+        6000
+      );
     }
+    await index.flushDiskCache(cacheDir);
   });
 
   const importDiagnostics = createImportDiagnostics(index);
@@ -200,6 +224,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(...registerCommandCenter());
 }
 
-export function deactivate(): void {
-  // All resources are registered via context.subscriptions and disposed by VS Code.
+export async function deactivate(): Promise<void> {
+  // All other resources are registered via context.subscriptions and disposed
+  // by VS Code — this is the one thing that needs an explicit final flush, so
+  // files indexed live during the session (not just the two bulk scans) are
+  // cached for next time too.
+  await activeIndex?.flushDiskCache(activeCacheDir);
 }

@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { searchFileContents, looksLikeTextFile } from '../../src/language/searchEverywhere';
 import { tokenizePhp } from '../../src/language/previewPanel';
+import { PhpIndex } from '../../src/core/phpIndex';
+import * as os from 'os';
 
 // Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
 // directly for unit tests), so this file lands at out-test/test/suite/... —
@@ -360,5 +362,32 @@ suite('PHPStorm++ extension', () => {
       (vscode.window as any).showQuickPick = originalQuickPick;
     }
     assert.ok(executedReindex, 'expected picking "Rebuild PHP Index" to invoke phpstormpp.reindex');
+  });
+
+  test('disk cache round-trips a real index and is actually used on the next load', async () => {
+    const cacheDir = vscode.Uri.file(path.join(os.tmpdir(), `phpstormpp-test-cache-${Date.now()}`));
+
+    const index1 = new PhpIndex();
+    await index1.loadDiskCache(cacheDir);
+    const first = await index1.indexWorkspace();
+    assert.strictEqual(first.fromCache, 0, 'expected a fresh cache dir to produce zero cache hits');
+    assert.ok(first.scanned > 0, 'expected the scan to find fixture files');
+    await index1.flushDiskCache(cacheDir);
+    index1.dispose();
+
+    // Same files, same mtimes (nothing touched them) — a second PhpIndex loading
+    // the just-saved cache should serve them from disk instead of re-parsing.
+    const index2 = new PhpIndex();
+    await index2.loadDiskCache(cacheDir);
+    const second = await index2.indexWorkspace();
+    assert.strictEqual(second.fromCache, first.scanned, 'expected every file to be served from cache on the second load');
+
+    const user = index2.findClassByFqcn('App\\Models\\User');
+    assert.ok(user, 'expected the cached index to still resolve the User class');
+    assert.ok(user!.range instanceof vscode.Range, 'expected a real vscode.Range to be reconstructed from the cache, not a plain look-alike object');
+    assert.doesNotThrow(() => user!.range.contains(user!.nameRange), 'expected the reconstructed Range to have working prototype methods');
+    index2.dispose();
+
+    await vscode.workspace.fs.delete(cacheDir, { recursive: true });
   });
 });
