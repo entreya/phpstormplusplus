@@ -11,7 +11,7 @@ import { extractMethod } from './refactor/extractMethod';
 import { generateConstructor, generateGettersSetters } from './refactor/generateMembers';
 import { generatePhpDoc } from './refactor/phpDocGenerator';
 import { LiveTemplateCompletionProvider } from './templates/templateCompletionProvider';
-import { EmptyTreeProvider } from './terminalPanelView';
+import { FileExplorerViewProvider } from './fileExplorerViewProvider';
 import { activateFrameworkModules } from './frameworks/frameworkRegistry';
 import { createImportDiagnostics } from './language/importDiagnostics';
 import { ImportCodeActionProvider } from './refactor/importCodeActions';
@@ -173,24 +173,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  function openPhpStormTerminal(): void {
-    // Reuse the existing "PHPStorm++" terminal if one's already open, like
-    // PhpStorm's own Terminal tool window button, rather than piling up a
-    // fresh one on every click.
-    const existing = vscode.window.terminals.find((t) => t.name === 'PHPStorm++');
-    const terminal = existing ?? vscode.window.createTerminal('PHPStorm++');
-    terminal.show();
-  }
-
-  // The panel has no content of its own — revealing it (clicking the activity
-  // bar icon) just opens the terminal directly, no intermediate click-through.
-  const mainTreeView = vscode.window.createTreeView('phpstormpp.main', { treeDataProvider: new EmptyTreeProvider() });
   context.subscriptions.push(
-    mainTreeView,
-    mainTreeView.onDidChangeVisibility((e) => {
-      if (e.visible) openPhpStormTerminal();
-    }),
-    vscode.commands.registerCommand('phpstormpp.openTerminal', openPhpStormTerminal)
+    vscode.window.registerWebviewViewProvider(FileExplorerViewProvider.viewId, new FileExplorerViewProvider(context.extensionUri)),
+    vscode.commands.registerCommand('phpstormpp.openTerminal', () => {
+      // Reuse the existing "PHPStorm++" terminal if one's already open, like
+      // PhpStorm's own Terminal tool window button, rather than piling up a
+      // fresh one on every click.
+      const existing = vscode.window.terminals.find((t) => t.name === 'PHPStorm++');
+      const terminal = existing ?? vscode.window.createTerminal('PHPStorm++');
+      terminal.show();
+    })
   );
 
   const frameworkDisposables = await activateFrameworkModules(context, index);

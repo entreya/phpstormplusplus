@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { searchFileContents, looksLikeTextFile } from '../../src/language/searchEverywhere';
 import { tokenizePhp } from '../../src/language/previewPanel';
 import { PhpIndex } from '../../src/core/phpIndex';
+import { listDirectory } from '../../src/fileExplorerViewProvider';
 import * as os from 'os';
 
 // Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
@@ -389,5 +390,16 @@ suite('PHPStorm++ extension', () => {
     index2.dispose();
 
     await vscode.workspace.fs.delete(cacheDir, { recursive: true });
+  });
+
+  test('file explorer command is registered and listDirectory sorts folders before files', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('phpstormpp.main.focus'), 'expected the file explorer webview view to be registered (auto-generated .focus command)');
+
+    const entries = await listDirectory(vscode.Uri.file(fixtures));
+    const names = entries.map((e) => e.name);
+    assert.deepStrictEqual(names, ['controllers', 'src', 'vendor', 'views', 'composer.json'], 'expected directories sorted alphabetically before files');
+    assert.ok(entries.find((e) => e.name === 'src')?.isDirectory);
+    assert.ok(!entries.find((e) => e.name === 'composer.json')?.isDirectory);
   });
 });
