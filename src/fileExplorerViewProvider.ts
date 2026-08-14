@@ -2,9 +2,58 @@ import * as vscode from 'vscode';
 import { FileEntry, FromExtensionMessage, FromWebviewMessage, SearchFileResult } from './webviews/fileExplorer/protocol';
 import { buildSearchRegex, looksLikeTextFile, searchTextInFiles } from './core/textSearch';
 
-const SEARCH_EXCLUDE_GLOB = '**/{node_modules,.git,dist,out,out-test,.vscode-test}/**';
-const SEARCH_MAX_FILES = 5000;
+const PROJECT_EXCLUDE_GLOB = '**/{node_modules,.git,dist,out,out-test,.vscode-test,vendor}/**';
+const VENDOR_EXCLUDE_GLOB = '**/vendor/**/{tests,Tests,test,Test,docs,doc,examples,example,bin}/**';
+const SEARCH_MAX_FILES = 8000;
 const SEARCH_MAX_CONTENT_MATCHES = 500;
+
+/**
+ * Matches both file/path names and file contents against one query, which can
+ * be plain text or (with `useRegex`) a real regular expression — VS Code's
+ * own Find in Files supports both, so this does too. Returns undefined for
+ * an invalid regex (caller reports that back to the user) rather than
+ * silently falling back to a literal match, which would find the wrong
+ * things without any indication why.
+ *
+ * Project files are scanned before vendor/, and vendor/ only gets whatever
+ * budget is left under SEARCH_MAX_FILES — a large vendor/ tree previously
+ * shared one uncapped file list with the project's own files, so on a real
+ * project it could fill the entire cap and silently starve the user's own
+ * files out of ever being searched at all.
+ */
+export async function searchWorkspace(query: string, useRegex: boolean, caseSensitive: boolean): Promise<SearchFileResult[] | undefined> {
+  if (!query.trim()) return [];
+  const regex = buildSearchRegex(query, useRegex, caseSensitive);
+  if (!regex) return undefined;
+
+  const projectFiles = await vscode.workspace.findFiles('**/*', PROJECT_EXCLUDE_GLOB, SEARCH_MAX_FILES);
+  const remaining = SEARCH_MAX_FILES - projectFiles.length;
+  const vendorFiles = remaining > 0 ? await vscode.workspace.findFiles('vendor/**/*', VENDOR_EXCLUDE_GLOB, remaining) : [];
+  const allFiles = [...projectFiles, ...vendorFiles];
+
+  const byPath = new Map<string, SearchFileResult>();
+  for (const uri of allFiles) {
+    const rel = vscode.workspace.asRelativePath(uri, false);
+    if (regex.test(rel)) {
+      byPath.set(uri.toString(), { path: uri.toString(), name: rel, nameMatch: true, matches: [] });
+    }
+  }
+
+  const textCandidates = allFiles.filter(looksLikeTextFile);
+  const contentMatches = await searchTextInFiles(regex, textCandidates, SEARCH_MAX_CONTENT_MATCHES);
+  for (const m of contentMatches) {
+    const key = m.uri.toString();
+    const existing = byPath.get(key);
+    const rel = vscode.workspace.asRelativePath(m.uri, false);
+    if (existing) {
+      existing.matches.push({ line: m.line, text: m.lineText });
+    } else {
+      byPath.set(key, { path: key, name: rel, nameMatch: false, matches: [{ line: m.line, text: m.lineText }] });
+    }
+  }
+
+  return [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /**
  * Extension-host side of the custom file/folder explorer webview. This is an
@@ -89,7 +138,7 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'search': {
-          const results = await this.runSearch(message.query, message.useRegex, message.caseSensitive);
+          const results = await searchWorkspace(message.query, message.useRegex, message.caseSensitive);
           this.post(webview, { type: 'searchResults', query: message.query, results: results ?? [], invalidRegex: !results });
           break;
         }
@@ -103,43 +152,6 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
 
   private post(webview: vscode.Webview, message: FromExtensionMessage): void {
     void webview.postMessage(message);
-  }
-
-  /** Matches both file/path names and file contents against one query, which
-   * can be plain text or (with `useRegex`) a real regular expression — VS
-   * Code's own Find in Files supports both, so this does too. Returns
-   * undefined for an invalid regex (caller reports that back to the user)
-   * rather than silently falling back to a literal match, which would find
-   * the wrong things without any indication why. */
-  private async runSearch(query: string, useRegex: boolean, caseSensitive: boolean): Promise<SearchFileResult[] | undefined> {
-    if (!query.trim()) return [];
-    const regex = buildSearchRegex(query, useRegex, caseSensitive);
-    if (!regex) return undefined;
-
-    const allFiles = await vscode.workspace.findFiles('**/*', SEARCH_EXCLUDE_GLOB, SEARCH_MAX_FILES);
-    const byPath = new Map<string, SearchFileResult>();
-
-    for (const uri of allFiles) {
-      const rel = vscode.workspace.asRelativePath(uri, false);
-      if (regex.test(rel)) {
-        byPath.set(uri.toString(), { path: uri.toString(), name: rel, nameMatch: true, matches: [] });
-      }
-    }
-
-    const textCandidates = allFiles.filter(looksLikeTextFile);
-    const contentMatches = await searchTextInFiles(regex, textCandidates, SEARCH_MAX_CONTENT_MATCHES);
-    for (const m of contentMatches) {
-      const key = m.uri.toString();
-      const existing = byPath.get(key);
-      const rel = vscode.workspace.asRelativePath(m.uri, false);
-      if (existing) {
-        existing.matches.push({ line: m.line, text: m.lineText });
-      } else {
-        byPath.set(key, { path: key, name: rel, nameMatch: false, matches: [{ line: m.line, text: m.lineText }] });
-      }
-    }
-
-    return [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private renderHtml(webview: vscode.Webview): string {

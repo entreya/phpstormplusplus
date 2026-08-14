@@ -5,7 +5,7 @@ import { searchFileContents, looksLikeTextFile } from '../../src/language/search
 import { buildSearchRegex, searchTextInFiles } from '../../src/core/textSearch';
 import { tokenizePhp } from '../../src/language/previewPanel';
 import { PhpIndex } from '../../src/core/phpIndex';
-import { listDirectory } from '../../src/fileExplorerViewProvider';
+import { listDirectory, searchWorkspace } from '../../src/fileExplorerViewProvider';
 import * as os from 'os';
 
 // Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
@@ -438,5 +438,35 @@ suite('PHPStorm++ extension', () => {
     assert.deepStrictEqual(names, ['controllers', 'src', 'vendor', 'views', 'composer.json'], 'expected directories sorted alphabetically before files');
     assert.ok(entries.find((e) => e.name === 'src')?.isDirectory);
     assert.ok(!entries.find((e) => e.name === 'composer.json')?.isDirectory);
+  });
+
+  test('searchWorkspace finds a project file by name even with a large vendor/ present', async () => {
+    const results = await searchWorkspace('COMPREHENSIVE_PROMOTION_EVALUATION_WITH_INTERNALS_CREDIT_CGPA_UFM_ABSENCE', false, false);
+    assert.ok(results, 'expected a result array, not an invalid-regex undefined');
+    const hit = results!.find((r) => r.name.endsWith('COMPREHENSIVE_PROMOTION_EVALUATION_WITH_INTERNALS_CREDIT_CGPA_UFM_ABSENCE.php'));
+    assert.ok(hit, `expected to find the long-named project file, got: ${results!.map((r) => r.name).join(', ')}`);
+    assert.ok(hit!.nameMatch, 'expected this to be reported as a name match');
+  });
+
+  test('searchWorkspace still finds vendor/ files by name when there is room under the cap', async () => {
+    const results = await searchWorkspace('VendorThing', false, false);
+    assert.ok(results, 'expected a result array');
+    assert.ok(
+      results!.some((r) => r.name.includes('VendorThing.php')),
+      `expected vendor/ files to still be searchable, got: ${results!.map((r) => r.name).join(', ')}`
+    );
+  });
+
+  test('searchWorkspace supports content search with regex and case-sensitivity toggles', async () => {
+    const results = await searchWorkspace('Response .* success', true, false);
+    assert.ok(results, 'expected a result array');
+    const hit = results!.find((r) => r.name.endsWith('RelativeGradingFunctionRouter.php'));
+    assert.ok(hit, `expected a regex content match, got: ${results!.map((r) => r.name).join(', ')}`);
+    assert.ok(hit!.matches.length > 0, 'expected at least one line match recorded');
+  });
+
+  test('searchWorkspace reports an invalid regex rather than silently treating it as literal', async () => {
+    const results = await searchWorkspace('(unclosed', true, false);
+    assert.strictEqual(results, undefined, 'expected undefined for an invalid regex pattern');
   });
 });
