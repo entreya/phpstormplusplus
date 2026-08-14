@@ -4,7 +4,12 @@ import { buildSearchRegex, looksLikeTextFile, searchTextInFiles } from './core/t
 
 const PROJECT_EXCLUDE_GLOB = '**/{node_modules,.git,dist,out,out-test,.vscode-test,vendor}/**';
 const VENDOR_EXCLUDE_GLOB = '**/vendor/**/{tests,Tests,test,Test,docs,doc,examples,example,bin}/**';
-const SEARCH_MAX_FILES = 8000;
+// Enumerating file *names* is cheap (no I/O) — this cap only needs to be low
+// enough to bound a pathological repo, not tuned for typical project sizes,
+// so it's set generously. Content *reading* is the actually expensive part,
+// which searchTextInFiles (via SEARCH_MAX_CONTENT_MATCHES + its own internal
+// batch cap) bounds separately regardless of how big this number is.
+const SEARCH_MAX_FILES = 50000;
 const SEARCH_MAX_CONTENT_MATCHES = 500;
 
 /**

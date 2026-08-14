@@ -4,7 +4,7 @@ const TEXT_SEARCH_EXTENSIONS = new Set([
   '.php', '.phtml', '.js', '.jsx', '.ts', '.tsx', '.json', '.twig', '.html', '.htm', '.css', '.scss', '.md', '.yml',
   '.yaml', '.env', '.txt', '.xml', '.sql', '.blade.php'
 ]);
-const CONTENT_SEARCH_MAX_FILES = 4000;
+const CONTENT_SEARCH_MAX_FILES = 10000;
 const CONTENT_SEARCH_MAX_MATCHES = 200;
 const CONTENT_SEARCH_BATCH_SIZE = 25;
 

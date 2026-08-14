@@ -1,45 +1,48 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ConfigProvider, theme as antdTheme, Tree, Dropdown, Modal, Input, Button, Space, Typography, message } from 'antd';
+import { FolderOutlined, FolderOpenOutlined, PlusSquareOutlined, MinusSquareOutlined, LoadingOutlined, SearchOutlined } from '@ant-design/icons';
+import type { DataNode } from 'antd/es/tree';
+import type { MenuProps } from 'antd';
 import { onExtensionMessage, postToExtension } from './vscodeApi';
 import type { FileEntry, SearchFileResult } from './protocol';
-import type { TreeNodeData } from './FileTree';
-import FileTree from './FileTree';
+import { FileTypeIcon } from './fileIcons';
 import SearchResults from './SearchResults';
-import ContextMenu, { ContextMenuItem } from './ContextMenu';
-import PromptModal from './PromptModal';
-import { SearchIcon, CloseIcon, RefreshIcon } from './icons';
 
-function toNode(entry: FileEntry): TreeNodeData {
-  return { path: entry.path, name: entry.name, isDirectory: entry.isDirectory };
+const { DirectoryTree } = Tree;
+
+function isDarkTheme(): boolean {
+  return document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast');
 }
 
-function withChildren(nodes: TreeNodeData[], path: string, children: TreeNodeData[]): TreeNodeData[] {
+function toNode(entry: FileEntry): DataNode {
+  return { key: entry.path, title: entry.name, isLeaf: !entry.isDirectory };
+}
+
+/** Replaces the children of the node with the given key, anywhere in the tree. */
+function withChildren(nodes: DataNode[], key: string, children: DataNode[]): DataNode[] {
   return nodes.map((node) => {
-    if (node.path === path) return { ...node, children };
-    if (node.children) return { ...node, children: withChildren(node.children, path, children) };
+    if (node.key === key) return { ...node, children };
+    if (node.children) return { ...node, children: withChildren(node.children, key, children) };
     return node;
   });
 }
 
-type PromptState =
-  | { kind: 'newFile' | 'newFolder'; dirPath: string }
-  | { kind: 'rename'; path: string; currentName: string }
-  | { kind: 'delete'; path: string; name: string };
-
-interface MenuState {
-  x: number;
-  y: number;
-  node: TreeNodeData;
+interface PromptState {
+  title: string;
+  initialValue: string;
+  resolve: (value: string | undefined) => void;
 }
 
 const DEBOUNCE_MS = 250;
 
 export default function App(): React.ReactElement {
+  const [dark] = useState(isDarkTheme());
   const [rootPath, setRootPath] = useState<string>();
-  const [treeData, setTreeData] = useState<TreeNodeData[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [treeData, setTreeData] = useState<DataNode[]>([]);
   const [error, setError] = useState<string>();
-  const [menu, setMenu] = useState<MenuState>();
   const [prompt, setPrompt] = useState<PromptState>();
+  const [promptValue, setPromptValue] = useState('');
+  const pendingLoads = useRef(new Map<string, () => void>());
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -55,13 +58,16 @@ export default function App(): React.ReactElement {
       switch (msg.type) {
         case 'root':
           setRootPath(msg.path);
-          setTreeData([{ path: msg.path, name: msg.name, isDirectory: true }]);
-          setExpanded(new Set([msg.path]));
+          setTreeData([{ key: msg.path, title: msg.name }]);
           postToExtension({ type: 'listDir', path: msg.path });
           break;
-        case 'dirListing':
-          setTreeData((prev) => withChildren(prev, msg.path, msg.entries.map(toNode)));
+        case 'dirListing': {
+          const children = msg.entries.map(toNode);
+          setTreeData((prev) => withChildren(prev, msg.path, children));
+          pendingLoads.current.get(msg.path)?.();
+          pendingLoads.current.delete(msg.path);
           break;
+        }
         case 'refresh':
           postToExtension({ type: 'listDir', path: msg.path });
           break;
@@ -71,6 +77,7 @@ export default function App(): React.ReactElement {
           break;
         case 'error':
           setError(msg.message);
+          message.error(msg.message);
           break;
       }
     });
@@ -78,17 +85,72 @@ export default function App(): React.ReactElement {
     return unsubscribe;
   }, []);
 
-  function toggle(path: string): void {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-        postToExtension({ type: 'listDir', path });
-      }
-      return next;
+  function askPrompt(title: string, initialValue = ''): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      setPromptValue(initialValue);
+      setPrompt({ title, initialValue, resolve });
     });
+  }
+
+  function loadData(node: DataNode): Promise<void> {
+    return new Promise((resolve) => {
+      if (node.children) {
+        resolve();
+        return;
+      }
+      pendingLoads.current.set(node.key as string, resolve);
+      postToExtension({ type: 'listDir', path: node.key as string });
+    });
+  }
+
+  function onSelect(_keys: React.Key[], info: { node: DataNode }): void {
+    if (info.node.isLeaf) {
+      postToExtension({ type: 'openFile', path: info.node.key as string });
+    }
+  }
+
+  async function onNewFile(dirPath: string): Promise<void> {
+    const name = await askPrompt('New File', '');
+    if (name) postToExtension({ type: 'createFile', dirPath, name });
+  }
+
+  async function onNewFolder(dirPath: string): Promise<void> {
+    const name = await askPrompt('New Folder', '');
+    if (name) postToExtension({ type: 'createFolder', dirPath, name });
+  }
+
+  async function onRename(path: string, currentName: string): Promise<void> {
+    const name = await askPrompt('Rename', currentName);
+    if (name && name !== currentName) postToExtension({ type: 'rename', path, newName: name });
+  }
+
+  function onDelete(path: string, name: string): void {
+    Modal.confirm({
+      title: `Delete ${name}?`,
+      content: 'Moved to the OS trash — this can be undone from there.',
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: () => postToExtension({ type: 'delete', path })
+    });
+  }
+
+  function contextMenuFor(node: DataNode): MenuProps['items'] {
+    const isDir = !node.isLeaf;
+    const items: MenuProps['items'] = [];
+    if (isDir) {
+      items.push(
+        { key: 'newFile', label: 'New File', onClick: () => onNewFile(node.key as string) },
+        { key: 'newFolder', label: 'New Folder', onClick: () => onNewFolder(node.key as string) },
+        { type: 'divider' }
+      );
+    }
+    if (node.key !== rootPath) {
+      items.push(
+        { key: 'rename', label: 'Rename', onClick: () => onRename(node.key as string, String(node.title)) },
+        { key: 'delete', label: 'Delete', danger: true, onClick: () => onDelete(node.key as string, String(node.title)) }
+      );
+    }
+    return items;
   }
 
   function openFile(path: string, line?: number): void {
@@ -114,18 +176,6 @@ export default function App(): React.ReactElement {
     runSearch(q, useRegex, caseSensitive);
   }
 
-  function toggleRegex(): void {
-    const next = !useRegex;
-    setUseRegex(next);
-    runSearch(query, next, caseSensitive);
-  }
-
-  function toggleCase(): void {
-    const next = !caseSensitive;
-    setCaseSensitive(next);
-    runSearch(query, useRegex, next);
-  }
-
   function closeSearch(): void {
     setSearchOpen(false);
     setQuery('');
@@ -134,100 +184,149 @@ export default function App(): React.ReactElement {
     postToExtension({ type: 'clearSearch' });
   }
 
-  function contextMenuItems(node: TreeNodeData): ContextMenuItem[] {
-    const items: ContextMenuItem[] = [];
-    if (node.isDirectory) {
-      items.push(
-        { key: 'newFile', label: 'New File', onClick: () => setPrompt({ kind: 'newFile', dirPath: node.path }) },
-        { key: 'newFolder', label: 'New Folder', onClick: () => setPrompt({ kind: 'newFolder', dirPath: node.path }) }
-      );
-    }
-    if (node.path !== rootPath) {
-      items.push(
-        { key: 'rename', label: 'Rename', separatorBefore: node.isDirectory, onClick: () => setPrompt({ kind: 'rename', path: node.path, currentName: node.name }) },
-        { key: 'delete', label: 'Delete', danger: true, onClick: () => setPrompt({ kind: 'delete', path: node.path, name: node.name }) }
-      );
-    }
-    return items;
-  }
-
-  function submitPrompt(value: string): void {
-    if (!prompt) return;
-    if (prompt.kind === 'newFile' && value) postToExtension({ type: 'createFile', dirPath: prompt.dirPath, name: value });
-    else if (prompt.kind === 'newFolder' && value) postToExtension({ type: 'createFolder', dirPath: prompt.dirPath, name: value });
-    else if (prompt.kind === 'rename' && value && value !== prompt.currentName) postToExtension({ type: 'rename', path: prompt.path, newName: value });
-    else if (prompt.kind === 'delete') postToExtension({ type: 'delete', path: prompt.path });
-    setPrompt(undefined);
-  }
-
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div className="pp-toolbar">
-        <span className="pp-toolbar-title">Explorer</span>
-        <span>
-          <button className={`pp-icon-button${searchOpen ? ' active' : ''}`} title="Find in Files" onClick={() => setSearchOpen((v) => !v)}>
-            <SearchIcon />
-          </button>
-          <button className="pp-icon-button" title="Refresh" onClick={() => rootPath && postToExtension({ type: 'listDir', path: rootPath })}>
-            <RefreshIcon />
-          </button>
-        </span>
-      </div>
+    <ConfigProvider
+      theme={{
+        algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+        token: {
+          colorBgContainer: 'var(--vscode-sideBar-background)',
+          colorText: 'var(--vscode-sideBar-foreground)',
+          colorPrimary: 'var(--vscode-button-background)',
+          borderRadius: 2
+        }
+      }}
+    >
+      <div style={{ padding: 8, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+        <Space style={{ marginBottom: 8, justifyContent: 'space-between', width: '100%' }}>
+          <Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.75 }}>
+            Explorer
+          </Typography.Text>
+          <Space size={4}>
+            <Button size="small" type={searchOpen ? 'primary' : 'text'} icon={<SearchOutlined />} title="Find in Files" onClick={() => setSearchOpen((v) => !v)} />
+            <Button size="small" type="text" onClick={() => rootPath && postToExtension({ type: 'listDir', path: rootPath })}>
+              Refresh
+            </Button>
+          </Space>
+        </Space>
 
-      {searchOpen && (
-        <div>
-          <div className={`pp-search-box${invalidRegex ? ' invalid' : ''}`}>
-            <input
+        {searchOpen && (
+          <div style={{ marginBottom: 8 }}>
+            <Input.Search
+              size="small"
               autoFocus
               placeholder="Find in files (name or content)..."
               value={query}
+              status={invalidRegex ? 'error' : undefined}
               onChange={(e) => onQueryChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Escape' && closeSearch()}
+              allowClear
+              onSearch={(v) => runSearch(v, useRegex, caseSensitive)}
             />
-            <button className={`pp-icon-button${caseSensitive ? ' active' : ''}`} title="Match Case" onClick={toggleCase}>
-              Aa
-            </button>
-            <button className={`pp-icon-button${useRegex ? ' active' : ''}`} title="Use Regular Expression" onClick={toggleRegex}>
-              .*
-            </button>
-            <button className="pp-icon-button" title="Close" onClick={closeSearch}>
-              <CloseIcon />
-            </button>
+            <Space size={4} style={{ marginTop: 4 }}>
+              <Button
+                size="small"
+                type={caseSensitive ? 'primary' : 'default'}
+                onClick={() => {
+                  const next = !caseSensitive;
+                  setCaseSensitive(next);
+                  runSearch(query, useRegex, next);
+                }}
+              >
+                Aa
+              </Button>
+              <Button
+                size="small"
+                type={useRegex ? 'primary' : 'default'}
+                onClick={() => {
+                  const next = !useRegex;
+                  setUseRegex(next);
+                  runSearch(query, next, caseSensitive);
+                }}
+              >
+                .*
+              </Button>
+              {invalidRegex && (
+                <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                  Invalid regular expression.
+                </Typography.Text>
+              )}
+            </Space>
           </div>
-          {invalidRegex && <div className="pp-error">Invalid regular expression.</div>}
-        </div>
-      )}
-
-      {error && <div className="pp-error">{error}</div>}
-      {!rootPath && !error && <div className="pp-empty">Loading…</div>}
-
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {searchOpen && results !== undefined ? (
-          <SearchResults results={results} onOpenFile={openFile} />
-        ) : (
-          rootPath && <FileTree nodes={treeData} expanded={expanded} onToggle={toggle} onOpenFile={openFile} onContextMenu={(e, node) => setMenu({ x: e.clientX, y: e.clientY, node })} />
         )}
+
+        {error && (
+          <Typography.Text type="danger" style={{ fontSize: 12, marginBottom: 8 }}>
+            {error}
+          </Typography.Text>
+        )}
+
+        {!rootPath && !error && <Typography.Text type="secondary">Loading…</Typography.Text>}
+
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {searchOpen && results !== undefined ? (
+            <SearchResults results={results} onOpenFile={openFile} />
+          ) : (
+            rootPath && (
+              // DirectoryTree + an explicit switcherIcon, rather than plain Tree relying
+              // on antd's default switcher glyph — the default depends on styling that
+              // doesn't reliably resolve inside a webview's restricted environment,
+              // which is what caused the chevron/label to render disconnected before.
+              // The static CSS in fileExplorerViewProvider.ts's renderHtml() forces the
+              // correct flex layout unconditionally as a permanent safety net on top.
+              <DirectoryTree
+                treeData={treeData}
+                loadData={loadData}
+                onSelect={onSelect}
+                showIcon
+                showLine={{ showLeafIcon: false }}
+                defaultExpandedKeys={[rootPath]}
+                switcherIcon={(props) => {
+                  if (props.loading) return <LoadingOutlined />;
+                  if (props.isLeaf) return null;
+                  return props.expanded ? <MinusSquareOutlined /> : <PlusSquareOutlined />;
+                }}
+                icon={(props) =>
+                  props.isLeaf ? (
+                    <FileTypeIcon filename={String(props.title ?? '')} />
+                  ) : props.expanded ? (
+                    <FolderOpenOutlined />
+                  ) : (
+                    <FolderOutlined />
+                  )
+                }
+                titleRender={(node) => (
+                  <Dropdown menu={{ items: contextMenuFor(node) }} trigger={['contextMenu']}>
+                    <span title={String(node.title)}>{node.title as React.ReactNode}</span>
+                  </Dropdown>
+                )}
+              />
+            )
+          )}
+        </div>
+
+        <Modal
+          title={prompt?.title}
+          open={!!prompt}
+          onCancel={() => {
+            prompt?.resolve(undefined);
+            setPrompt(undefined);
+          }}
+          onOk={() => {
+            prompt?.resolve(promptValue.trim() || undefined);
+            setPrompt(undefined);
+          }}
+        >
+          <Input
+            value={promptValue}
+            onChange={(e) => setPromptValue(e.target.value)}
+            autoFocus
+            onPressEnter={() => {
+              prompt?.resolve(promptValue.trim() || undefined);
+              setPrompt(undefined);
+            }}
+          />
+        </Modal>
       </div>
-
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={contextMenuItems(menu.node)} onClose={() => setMenu(undefined)} />}
-
-      {prompt && prompt.kind === 'newFile' && <PromptModal title="New File" onSubmit={submitPrompt} onCancel={() => setPrompt(undefined)} />}
-      {prompt && prompt.kind === 'newFolder' && <PromptModal title="New Folder" onSubmit={submitPrompt} onCancel={() => setPrompt(undefined)} />}
-      {prompt && prompt.kind === 'rename' && (
-        <PromptModal title="Rename" initialValue={prompt.currentName} okLabel="Rename" onSubmit={submitPrompt} onCancel={() => setPrompt(undefined)} />
-      )}
-      {prompt && prompt.kind === 'delete' && (
-        <PromptModal
-          title={`Delete ${prompt.name}?`}
-          message="Moved to the OS trash — this can be undone from there."
-          danger
-          confirmOnly
-          okLabel="Delete"
-          initialValue=""
-          onSubmit={submitPrompt}
-          onCancel={() => setPrompt(undefined)}
-        />
-      )}
-    </div>
+    </ConfigProvider>
   );
 }

@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, live templates, Xdebug debugging, and pluggable framework support (starting with Yii2).",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -778,6 +778,8 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.2",
+    "antd": "^6.6.0",
     "fast-xml-parser": "^5.10.1",
     "php-parser": "^3.1.5",
     "react": "^19.2.8",
