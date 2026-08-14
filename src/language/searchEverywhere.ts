@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import { PhpIndex } from '../core/phpIndex';
 import { PreviewViewProvider } from './previewPanel';
+import { buildSearchRegex, looksLikeTextFile, searchTextInFiles } from '../core/textSearch';
+
+export { looksLikeTextFile };
 
 export interface EverywhereItem extends vscode.QuickPickItem {
   target: 'file' | 'class' | 'method' | 'command' | 'text';
@@ -9,62 +12,27 @@ export interface EverywhereItem extends vscode.QuickPickItem {
   commandId?: string;
 }
 
-const TEXT_SEARCH_EXTENSIONS = new Set([
-  '.php', '.phtml', '.js', '.jsx', '.ts', '.tsx', '.json', '.twig', '.html', '.htm', '.css', '.scss', '.md', '.yml',
-  '.yaml', '.env', '.txt', '.xml', '.sql', '.blade.php'
-]);
 const CONTENT_SEARCH_DEBOUNCE_MS = 250;
 const CONTENT_SEARCH_MIN_QUERY_LENGTH = 3;
-const CONTENT_SEARCH_MAX_FILES = 4000;
 const CONTENT_SEARCH_MAX_MATCHES = 40;
-const CONTENT_SEARCH_BATCH_SIZE = 25;
 
-export function looksLikeTextFile(uri: vscode.Uri): boolean {
-  const path = uri.path.toLowerCase();
-  for (const ext of TEXT_SEARCH_EXTENSIONS) {
-    if (path.endsWith(ext)) return true;
-  }
-  return false;
-}
-
-/** Scans file contents for a literal, case-insensitive substring match — the
- * one thing name/symbol matching can never find (a log message, a string
- * literal, a comment, ...). Reads in small concurrent batches so it doesn't
- * serialize thousands of individual file reads one at a time. */
+/** Thin QuickPick-flavored wrapper around the shared text-search scan (plain
+ * substring, not regex — Search Everywhere's single input already does a lot;
+ * the file explorer's dedicated Find in Files box is where regex mode lives). */
 export async function searchFileContents(query: string, files: vscode.Uri[]): Promise<EverywhereItem[]> {
-  const q = query.toLowerCase();
-  const items: EverywhereItem[] = [];
-  const limit = Math.min(files.length, CONTENT_SEARCH_MAX_FILES);
-
-  for (let start = 0; start < limit && items.length < CONTENT_SEARCH_MAX_MATCHES; start += CONTENT_SEARCH_BATCH_SIZE) {
-    const batch = files.slice(start, start + CONTENT_SEARCH_BATCH_SIZE);
-    const reads = await Promise.all(
-      batch.map(async (uri) => {
-        try {
-          const bytes = await vscode.workspace.fs.readFile(uri);
-          return { uri, text: Buffer.from(bytes).toString('utf8') };
-        } catch {
-          return undefined;
-        }
-      })
-    );
-    for (const read of reads) {
-      if (!read) continue;
-      const lines = read.text.split('\n');
-      for (let i = 0; i < lines.length && items.length < CONTENT_SEARCH_MAX_MATCHES; i++) {
-        if (!lines[i].toLowerCase().includes(q)) continue;
-        const rel = vscode.workspace.asRelativePath(read.uri, false);
-        items.push({
-          label: `$(search) ${lines[i].trim().slice(0, 120)}`,
-          description: `${rel}:${i + 1}`,
-          target: 'text',
-          uri: read.uri,
-          range: new vscode.Range(i, 0, i, 0)
-        });
-      }
-    }
-  }
-  return items;
+  const regex = buildSearchRegex(query, false);
+  if (!regex) return [];
+  const matches = await searchTextInFiles(regex, files, CONTENT_SEARCH_MAX_MATCHES);
+  return matches.map((m) => {
+    const rel = vscode.workspace.asRelativePath(m.uri, false);
+    return {
+      label: `$(search) ${m.lineText}`,
+      description: `${rel}:${m.line + 1}`,
+      target: 'text',
+      uri: m.uri,
+      range: new vscode.Range(m.line, 0, m.line, 0)
+    };
+  });
 }
 
 /**

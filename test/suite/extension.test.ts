@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { searchFileContents, looksLikeTextFile } from '../../src/language/searchEverywhere';
+import { buildSearchRegex, searchTextInFiles } from '../../src/core/textSearch';
 import { tokenizePhp } from '../../src/language/previewPanel';
 import { PhpIndex } from '../../src/core/phpIndex';
 import { listDirectory } from '../../src/fileExplorerViewProvider';
@@ -308,6 +309,42 @@ suite('PHPStorm++ extension', () => {
     const hit = matches.find((m) => m.uri?.fsPath === targetUri.fsPath);
     assert.ok(hit, `expected a content match in RelativeGradingFunctionRouter.php, got matches in: ${matches.map((m) => m.description).join(', ')}`);
     assert.strictEqual(hit!.range?.start.line, 8, 'expected the match to be on the line containing the string literal');
+  });
+
+  test('buildSearchRegex: literal mode escapes regex metacharacters', () => {
+    const regex = buildSearchRegex('a.b', false);
+    assert.ok(regex, 'expected a regex to be built');
+    assert.ok(regex!.test('a.b'), 'expected the literal dot to match a literal dot');
+    assert.ok(!regex!.test('aXb'), 'expected the literal dot to NOT match an arbitrary character (i.e. not be treated as regex .)');
+  });
+
+  test('buildSearchRegex: regex mode compiles the raw pattern', () => {
+    const regex = buildSearchRegex('Rel.*Router', true);
+    assert.ok(regex, 'expected a regex to be built');
+    assert.ok(regex!.test('RelativeGradingFunctionRouter'), 'expected the regex .* to match across the middle of the word');
+  });
+
+  test('buildSearchRegex: invalid regex pattern returns undefined rather than throwing', () => {
+    const regex = buildSearchRegex('(unclosed', true);
+    assert.strictEqual(regex, undefined, 'expected an invalid regex to be reported as undefined, not silently coerced');
+  });
+
+  test('buildSearchRegex: case sensitivity toggle actually changes matching', () => {
+    const insensitive = buildSearchRegex('router', false, false);
+    const sensitive = buildSearchRegex('router', false, true);
+    assert.ok(insensitive!.test('Router'), 'expected case-insensitive mode to match different casing');
+    assert.ok(!sensitive!.test('Router'), 'expected case-sensitive mode to NOT match different casing');
+  });
+
+  test('searchTextInFiles finds a match using a real regex pattern, not just literal substrings', async () => {
+    const targetUri = vscode.Uri.file(path.join(fixtures, 'src', 'RelativeGradingFunctionRouter.php'));
+    const candidateFiles = await vscode.workspace.findFiles('**/*.php', '**/vendor/**');
+    const regex = buildSearchRegex('Response .* success', true);
+    assert.ok(regex, 'expected a valid regex');
+
+    const matches = await searchTextInFiles(regex!, candidateFiles);
+    const hit = matches.find((m) => m.uri.fsPath === targetUri.fsPath);
+    assert.ok(hit, `expected the regex to match inside RelativeGradingFunctionRouter.php, got: ${matches.map((m) => m.uri.fsPath).join(', ')}`);
   });
 
   test('preview panel PHP tokenizer classifies keywords, strings, variables, and comments', () => {

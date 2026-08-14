@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { FileEntry, FromExtensionMessage, FromWebviewMessage } from './webviews/fileExplorer/protocol';
+import { FileEntry, FromExtensionMessage, FromWebviewMessage, SearchFileResult } from './webviews/fileExplorer/protocol';
+import { buildSearchRegex, looksLikeTextFile, searchTextInFiles } from './core/textSearch';
+
+const SEARCH_EXCLUDE_GLOB = '**/{node_modules,.git,dist,out,out-test,.vscode-test}/**';
+const SEARCH_MAX_FILES = 5000;
+const SEARCH_MAX_CONTENT_MATCHES = 500;
 
 /**
  * Extension-host side of the custom file/folder explorer webview. This is an
@@ -42,7 +47,12 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
         }
         case 'openFile': {
           const uri = vscode.Uri.parse(message.path);
-          await vscode.window.showTextDocument(uri, { preview: false });
+          const editor = await vscode.window.showTextDocument(uri, { preview: false });
+          if (message.line !== undefined) {
+            const position = new vscode.Position(message.line, 0);
+            editor.selection = new vscode.Selection(position, position);
+            editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+          }
           break;
         }
         case 'createFile': {
@@ -78,6 +88,13 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
           this.post(webview, { type: 'refresh', path: parent.toString() });
           break;
         }
+        case 'search': {
+          const results = await this.runSearch(message.query, message.useRegex, message.caseSensitive);
+          this.post(webview, { type: 'searchResults', query: message.query, results: results ?? [], invalidRegex: !results });
+          break;
+        }
+        case 'clearSearch':
+          break;
       }
     } catch (e: any) {
       this.post(webview, { type: 'error', message: e?.message ?? String(e) });
@@ -86,6 +103,43 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
 
   private post(webview: vscode.Webview, message: FromExtensionMessage): void {
     void webview.postMessage(message);
+  }
+
+  /** Matches both file/path names and file contents against one query, which
+   * can be plain text or (with `useRegex`) a real regular expression — VS
+   * Code's own Find in Files supports both, so this does too. Returns
+   * undefined for an invalid regex (caller reports that back to the user)
+   * rather than silently falling back to a literal match, which would find
+   * the wrong things without any indication why. */
+  private async runSearch(query: string, useRegex: boolean, caseSensitive: boolean): Promise<SearchFileResult[] | undefined> {
+    if (!query.trim()) return [];
+    const regex = buildSearchRegex(query, useRegex, caseSensitive);
+    if (!regex) return undefined;
+
+    const allFiles = await vscode.workspace.findFiles('**/*', SEARCH_EXCLUDE_GLOB, SEARCH_MAX_FILES);
+    const byPath = new Map<string, SearchFileResult>();
+
+    for (const uri of allFiles) {
+      const rel = vscode.workspace.asRelativePath(uri, false);
+      if (regex.test(rel)) {
+        byPath.set(uri.toString(), { path: uri.toString(), name: rel, nameMatch: true, matches: [] });
+      }
+    }
+
+    const textCandidates = allFiles.filter(looksLikeTextFile);
+    const contentMatches = await searchTextInFiles(regex, textCandidates, SEARCH_MAX_CONTENT_MATCHES);
+    for (const m of contentMatches) {
+      const key = m.uri.toString();
+      const existing = byPath.get(key);
+      const rel = vscode.workspace.asRelativePath(m.uri, false);
+      if (existing) {
+        existing.matches.push({ line: m.line, text: m.lineText });
+      } else {
+        byPath.set(key, { path: key, name: rel, nameMatch: false, matches: [{ line: m.line, text: m.lineText }] });
+      }
+    }
+
+    return [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private renderHtml(webview: vscode.Webview): string {
@@ -99,20 +153,56 @@ export class FileExplorerViewProvider implements vscode.WebviewViewProvider {
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: var(--vscode-sideBar-background); color: var(--vscode-sideBar-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   #root { height: 100%; }
+  * { box-sizing: border-box; }
+  button, input { font-family: inherit; font-size: inherit; }
 
-  /* antd's Tree never gives .ant-tree-node-content-wrapper display:flex itself —
-     it relies on the icon being inline-block and the title being plain inline
-     content to sit side by side. Our own titleRender content doesn't meet that
-     by default, and antd's own CSS-in-JS injection is not something we want a
-     hard runtime dependency on inside a webview. These rules make the icon/
-     title layout correct unconditionally, regardless of what antd's own
-     styles do or don't apply here. */
-  .ant-tree-treenode { display: flex !important; align-items: center !important; }
-  .ant-tree-switcher { display: flex !important; align-items: center !important; justify-content: center !important; flex: none !important; }
-  .ant-tree-checkbox { flex-shrink: 0 !important; }
-  .ant-tree-node-content-wrapper { display: flex !important; align-items: center !important; flex: auto !important; min-width: 0 !important; }
-  .ant-tree-iconEle { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: none !important; }
-  .ant-tree-title { display: inline-block !important; flex: auto !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  /* Hand-rolled tree/list/menu — no UI component library. A prior attempt
+     using antd's Tree had its icon/title layout silently break (antd never
+     gives .ant-tree-node-content-wrapper display:flex itself), which isn't a
+     risk worth re-taking for something this layout-critical. Plain elements
+     with our own CSS mean we own every pixel of this. */
+  .pp-row { display: flex; align-items: center; cursor: pointer; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+  .pp-row:hover { background: var(--vscode-list-hoverBackground); }
+  .pp-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .pp-chevron { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; opacity: 0.8; }
+  .pp-chevron.empty { visibility: hidden; }
+  .pp-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; margin-right: 4px; }
+  .pp-name { overflow: hidden; text-overflow: ellipsis; flex: auto; min-width: 0; }
+  .pp-match-count { opacity: 0.6; font-size: 11px; margin-left: 6px; flex: none; }
+  .pp-line-match { display: flex; padding: 1px 4px 1px 36px; cursor: pointer; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+  .pp-line-match:hover { background: var(--vscode-list-hoverBackground); }
+  .pp-line-no { opacity: 0.6; margin-right: 8px; flex: none; }
+  .pp-line-text { overflow: hidden; text-overflow: ellipsis; font-family: var(--vscode-editor-font-family); }
+
+  .pp-context-menu { position: fixed; z-index: 1000; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground)); border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border)); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); padding: 4px 0; min-width: 160px; }
+  .pp-context-menu-item { padding: 4px 12px; cursor: pointer; }
+  .pp-context-menu-item:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
+  .pp-context-menu-item.danger { color: var(--vscode-errorForeground, #f48771); }
+  .pp-context-menu-sep { height: 1px; background: var(--vscode-menu-separatorBackground, var(--vscode-widget-border)); margin: 4px 0; }
+
+  .pp-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; }
+  .pp-toolbar-title { font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.75; }
+  .pp-icon-button { background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px 4px; border-radius: 3px; display: inline-flex; align-items: center; }
+  .pp-icon-button:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); }
+  .pp-icon-button.active { background: var(--vscode-inputOption-activeBackground); color: var(--vscode-inputOption-activeForeground); }
+
+  .pp-search-box { display: flex; align-items: center; margin: 4px 8px; border: 1px solid var(--vscode-input-border, transparent); background: var(--vscode-input-background); border-radius: 3px; }
+  .pp-search-box input { flex: auto; min-width: 0; background: transparent; border: none; outline: none; color: var(--vscode-input-foreground); padding: 3px 4px; }
+  .pp-search-box.invalid { border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground)); }
+
+  .pp-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+  .pp-modal { background: var(--vscode-editorWidget-background); color: var(--vscode-editorWidget-foreground); border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 16px; width: 300px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+  .pp-modal-title { font-weight: 600; margin-bottom: 10px; }
+  .pp-modal input { width: 100%; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 5px 6px; outline: none; }
+  .pp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .pp-btn { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; border-radius: 3px; padding: 4px 12px; cursor: pointer; }
+  .pp-btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .pp-btn.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .pp-btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+  .pp-btn.danger { background: var(--vscode-errorForeground, #c53030); color: white; }
+
+  .pp-error { color: var(--vscode-errorForeground); font-size: 12px; padding: 4px 8px; }
+  .pp-empty { opacity: 0.7; padding: 8px; font-size: 12px; }
 </style>
 </head>
 <body>
