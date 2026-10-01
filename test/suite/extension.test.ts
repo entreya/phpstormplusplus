@@ -6,6 +6,7 @@ import { buildSearchRegex, searchTextInFiles } from '../../src/core/textSearch';
 import { tokenizePhp } from '../../src/language/previewPanel';
 import { PhpIndex } from '../../src/core/phpIndex';
 import { listDirectory, searchWorkspace } from '../../src/fileExplorerViewProvider';
+import { formatPhp } from '../../src/language/formatter';
 import * as os from 'os';
 
 // Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
@@ -468,5 +469,153 @@ suite('PHPStorm++ extension', () => {
   test('searchWorkspace reports an invalid regex rather than silently treating it as literal', async () => {
     const results = await searchWorkspace('(unclosed', true, false);
     assert.strictEqual(results, undefined, 'expected undefined for an invalid regex pattern');
+  });
+
+  // Poll the workspace symbol provider until `name`'s presence matches `present`
+  // (or give up). File-watcher events are async and can lag a little behind the
+  // fs write, so we retry rather than assume the index updated synchronously.
+  async function waitForSymbol(name: string, present: boolean): Promise<boolean> {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const results = (await vscode.commands.executeCommand(
+        'vscode.executeWorkspaceSymbolProvider',
+        name
+      )) as vscode.SymbolInformation[];
+      if (results.some((s) => s.name === name) === present) return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
+  }
+
+  test('a class created directly on disk (outside the editor) becomes symbol-resolvable without a manual reindex', async function () {
+    this.timeout(20000);
+    const createdUri = vscode.Uri.file(path.join(fixtures, 'src', 'WatcherCreated.php'));
+    await vscode.workspace.fs.writeFile(
+      createdUri,
+      Buffer.from('<?php\nnamespace App;\nclass WatcherCreated { public function ping(): void {} }\n', 'utf8')
+    );
+    try {
+      assert.ok(
+        await waitForSymbol('WatcherCreated', true),
+        'expected the file-watcher onDidCreate to index a class created directly on disk'
+      );
+    } finally {
+      await vscode.workspace.fs.delete(createdUri);
+    }
+  });
+
+  test('a .php file changed on disk (outside the editor) is re-indexed via the watcher onDidChange', async function () {
+    this.timeout(25000);
+    const fileUri = vscode.Uri.file(path.join(fixtures, 'src', 'WatcherChanged.php'));
+
+    // Index an initial class via the create event...
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from('<?php\nnamespace App;\nclass WatcherBefore {}\n', 'utf8'));
+    try {
+      assert.ok(await waitForSymbol('WatcherBefore', true), 'precondition: initial class should be indexed on create');
+
+      // ...then rewrite the file on disk with a renamed class. This is a pure
+      // change event — the exact case that was silently dropped before, since
+      // the watcher had no onDidChange handler.
+      await vscode.workspace.fs.writeFile(fileUri, Buffer.from('<?php\nnamespace App;\nclass WatcherAfter {}\n', 'utf8'));
+
+      assert.ok(await waitForSymbol('WatcherAfter', true), 'expected onDidChange to index the renamed class after an external edit');
+      assert.ok(await waitForSymbol('WatcherBefore', false), 'expected the old class to drop out of the index after the change');
+    } finally {
+      await vscode.workspace.fs.delete(fileUri);
+    }
+  });
+
+  test('formatter reindents nested blocks to the configured unit', () => {
+    const input = ['<?php', 'namespace App;', 'class Foo {', 'public function bar() {', 'if (true) {', 'return 1;', '}', '}', '}'].join('\n');
+    const expected =
+      ['<?php', 'namespace App;', 'class Foo {', '    public function bar() {', '        if (true) {', '            return 1;', '        }', '    }', '}'].join(
+        '\n'
+      ) + '\n';
+    assert.strictEqual(formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n' }), expected);
+  });
+
+  test('formatter honors tabs when insertSpaces is false', () => {
+    const input = ['<?php', 'class Foo {', 'public $x = 1;', '}'].join('\n');
+    const expected = ['<?php', 'class Foo {', '\tpublic $x = 1;', '}'].join('\n') + '\n';
+    assert.strictEqual(formatPhp(input, { tabSize: 4, insertSpaces: false, eol: '\n' }), expected);
+  });
+
+  test('formatter leaves a heredoc body and its closing marker byte-for-byte intact', () => {
+    const input = ['<?php', 'function f() {', '$x = <<<EOT', '    keep   this   raw', '      weird', 'EOT;', 'return $x;', '}'].join('\n');
+    const expected =
+      ['<?php', 'function f() {', '    $x = <<<EOT', '    keep   this   raw', '      weird', 'EOT;', '    return $x;', '}'].join('\n') + '\n';
+    const out = formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n' });
+    assert.strictEqual(out, expected);
+    // The literal body lines and the column-0 closer must survive untouched.
+    assert.ok(out!.includes('\n    keep   this   raw\n      weird\nEOT;'), 'heredoc body/closer indentation must be preserved exactly');
+  });
+
+  test('formatter does not treat braces inside strings or comments as real brackets', () => {
+    const input = ['<?php', 'class C {', 'public function m() {', '$s = "a { b } c";', '// } comment {', 'return $s;', '}', '}'].join('\n');
+    const expected =
+      ['<?php', 'class C {', '    public function m() {', '        $s = "a { b } c";', '        // } comment {', '        return $s;', '    }', '}'].join(
+        '\n'
+      ) + '\n';
+    assert.strictEqual(formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n' }), expected);
+  });
+
+  test('formatter freezes inline-HTML lines (literal output) and only reindents PHP', () => {
+    const input = ['<div class="x">', '    <span>hello</span>', '</div>', '<?php', 'if ($a) {', 'echo 1;', '}'].join('\n');
+    const expected =
+      ['<div class="x">', '    <span>hello</span>', '</div>', '<?php', 'if ($a) {', '    echo 1;', '}'].join('\n') + '\n';
+    assert.strictEqual(formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n' }), expected);
+  });
+
+  test('formatter trims trailing whitespace and collapses blank-line runs', () => {
+    const input = ['<?php', '$a = 1;   ', '', '   ', '$b = 2;'].join('\n');
+    const expected = ['<?php', '$a = 1;', '', '$b = 2;'].join('\n') + '\n';
+    assert.strictEqual(formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n', maxBlankLines: 1 }), expected);
+  });
+
+  test('formatter returns undefined when there is nothing to change or nothing to parse', () => {
+    const already = ['<?php', 'class C {', '    public $x = 1;', '}'].join('\n') + '\n';
+    assert.strictEqual(formatPhp(already, { tabSize: 4, insertSpaces: true, eol: '\n' }), undefined);
+    assert.strictEqual(formatPhp('', { tabSize: 4, insertSpaces: true, eol: '\n' }), undefined);
+  });
+
+  test('formatter never changes anything but whitespace (content is preserved)', () => {
+    const input = ['<?php', 'class Messy{', 'const A=1;', 'public function go($a,$b){', 'return [$a=>$b];', '}', '}'].join('\n');
+    const out = formatPhp(input, { tabSize: 4, insertSpaces: true, eol: '\n' });
+    assert.ok(out, 'expected a formatted result');
+    const stripWs = (s: string) => s.replace(/\s+/g, '');
+    assert.strictEqual(stripWs(out!), stripWs(input), 'non-whitespace content must be identical after formatting');
+  });
+
+  test('the registered PHP document formatter reindents a real file via executeFormatDocumentProvider', async () => {
+    const uri = vscode.Uri.file(path.join(fixtures, 'src', 'FormatMe.php'));
+    await vscode.workspace.fs.writeFile(uri, Buffer.from('<?php\nclass D {\npublic function x() {\nreturn 2;\n}\n}\n', 'utf8'));
+    try {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      const edits = (await vscode.commands.executeCommand(
+        'vscode.executeFormatDocumentProvider',
+        uri,
+        { tabSize: 4, insertSpaces: true }
+      )) as vscode.TextEdit[];
+      assert.ok(edits && edits.length > 0, 'expected the registered PHP formatter to produce edits');
+      const edit = new vscode.WorkspaceEdit();
+      for (const e of edits) edit.replace(uri, e.range, e.newText);
+      await vscode.workspace.applyEdit(edit);
+      assert.match(doc.getText(), /class D \{\n {4}public function x\(\) \{\n {8}return 2;\n {4}\}\n\}/);
+    } finally {
+      await vscode.workspace.fs.delete(uri);
+    }
+  });
+
+  test('openTerminal registers/reuses a single PHPStorm++ terminal, and reformat is a registered command', async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('phpstormpp.reformat'), 'expected phpstormpp.reformat to be registered');
+    assert.ok(commands.includes('phpstormpp.openTerminal'), 'expected phpstormpp.openTerminal to be registered');
+
+    const preexisting = vscode.window.terminals.some((t) => t.name === 'PHPStorm++');
+    await vscode.commands.executeCommand('phpstormpp.openTerminal');
+    await vscode.commands.executeCommand('phpstormpp.openTerminal');
+    const matches = vscode.window.terminals.filter((t) => t.name === 'PHPStorm++');
+    assert.strictEqual(matches.length, 1, 'expected exactly one reused PHPStorm++ terminal');
+    if (!preexisting) matches[0].dispose();
   });
 });

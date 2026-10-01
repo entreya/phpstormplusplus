@@ -16,7 +16,9 @@ below for what's intentionally out of scope for now.
 |---|---|
 | **Code intelligence** | Workspace-wide PHP indexer (`src/core`) built on `php-parser`; hover, go-to-definition, find references, rename, document/workspace symbols, and context-aware completion (`->`, `::`, `new`) with lightweight local type inference. |
 | **Refactoring** | Extract Variable, Extract Method (heuristic parameter inference), Generate Constructor, Generate Getters/Setters, Generate PHPDoc, and cross-file Rename Symbol. |
+| **Formatting** | Own PHP formatter (`src/language/formatter.ts`) wired as the default `Format Document` provider for PHP. A deliberately safe reindenter: depth from real bracket tokens only, heredoc/nowdoc bodies + closers, multi-line strings, comments and inline HTML left byte-for-byte intact, trailing whitespace trimmed, blank-line runs collapsed (`phpstormpp.format.maxConsecutiveBlankLines`). It only ever rewrites whitespace, and bails without editing if anything else would change — so it can't corrupt code. |
 | **Live Templates** | PhpStorm-style abbreviation snippets (`fore`, `iff`, `try`, `pubf`, `docb`, ...) plus a `phpstormpp.liveTemplates` setting for your own. |
+| **Terminal** | The PHPStorm++ activity-bar icon opens a terminal directly (the shared "PHPStorm++" terminal), PhpStorm's Terminal-tool-window style. Also `phpstormpp.openTerminal`. |
 | **Debugging** | A DAP server that speaks Xdebug's DBGp protocol directly over TCP (`src/debug`) — breakpoints, step in/over/out, call stack, scopes/variables, watch/eval. No dependency on any existing PHP debug extension. |
 | **Framework support** | A pluggable `FrameworkModule` API (`src/frameworks`). Yii2 ships first: project detection via `composer.json`, and Controller ↔ View navigation following Yii2's `controllerId`/`actionId` conventions. Add another framework by implementing the interface in `src/frameworks/types.ts` — nothing else needs to change. |
 
@@ -46,7 +48,7 @@ VS Code Extension Development Host (not just `tsc`) — see "Testing" below.
 
 ```
 src/core/        PHP parsing + workspace symbol index (php-parser wrapper, extractor, PhpIndex)
-src/language/    hover, go-to-definition, find references, completion, document/workspace symbols
+src/language/    hover, go-to-definition, find references, completion, document/workspace symbols, formatter, terminal launcher
 src/refactor/    rename, extract variable/method, generate constructor/getters-setters, PHPDoc
 src/templates/   Live Templates engine + default template set
 src/debug/       DBGp protocol client + DAP debug adapter for Xdebug

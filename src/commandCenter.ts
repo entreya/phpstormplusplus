@@ -34,6 +34,7 @@ function buildItems(): (CenterItem | vscode.QuickPickItem)[] {
     { label: '$(symbol-variable) Extract Variable', action: run('phpstormpp.extractVariable') },
     { label: '$(symbol-method) Extract Method', action: run('phpstormpp.extractMethod') },
     { label: '$(list-tree) Optimize Imports', action: run('phpstormpp.optimizeImports') },
+    { label: '$(symbol-namespace) Reformat Code', description: 'Cmd+Alt+L / Ctrl+Alt+L', action: run('phpstormpp.reformat') },
 
     { label: '$(terminal) Open Terminal', description: 'Also available as a button on the PHPStorm++ panel', action: run('phpstormpp.openTerminal') },
 

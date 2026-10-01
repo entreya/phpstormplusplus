@@ -11,7 +11,8 @@ import { extractMethod } from './refactor/extractMethod';
 import { generateConstructor, generateGettersSetters } from './refactor/generateMembers';
 import { generatePhpDoc } from './refactor/phpDocGenerator';
 import { LiveTemplateCompletionProvider } from './templates/templateCompletionProvider';
-import { FileExplorerViewProvider } from './fileExplorerViewProvider';
+import { TerminalLauncherViewProvider } from './language/terminalView';
+import { PhpFormattingProvider } from './language/formatter';
 import { activateFrameworkModules } from './frameworks/frameworkRegistry';
 import { createImportDiagnostics } from './language/importDiagnostics';
 import { ImportCodeActionProvider } from './refactor/importCodeActions';
@@ -103,9 +104,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   for (const doc of vscode.workspace.textDocuments) indexAndRefresh(doc);
 
+  // Re-index straight from disk on both create AND change, so files touched
+  // outside the editor make it into the index — not just ones opened/saved
+  // here. The change half is the important one: our own New File flow (and
+  // code generators, git pull, submodule checkout) creates an empty file then
+  // writes content into it; that content arrives as a *change* event, so
+  // without onDidChange the class silently never got indexed. Reads raw bytes
+  // via index.indexFile rather than opening a TextDocument (lighter, and it
+  // updates the disk cache), and skips the languageId gate that could drop a
+  // freshly-created file whose language association hadn't resolved yet.
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.php');
+  const reindexFromDisk = async (uri: vscode.Uri): Promise<void> => {
+    await index.indexFile(uri);
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    if (open) importDiagnostics.refresh(open);
+  };
+  watcher.onDidCreate((uri) => void reindexFromDisk(uri));
+  watcher.onDidChange((uri) => void reindexFromDisk(uri));
   watcher.onDidDelete((uri) => index.removeFile(uri));
-  watcher.onDidCreate(async (uri) => indexAndRefresh(await vscode.workspace.openTextDocument(uri)));
   context.subscriptions.push(watcher);
 
   context.subscriptions.push(
@@ -123,7 +139,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerDocumentPasteEditProvider(PHP_SELECTOR, new PasteImportProvider(index), {
       providedPasteEditKinds: [vscode.DocumentDropOrPasteEditKind.TextUpdateImports.append('php')],
       pasteMimeTypes: ['text/plain']
-    })
+    }),
+    vscode.languages.registerDocumentFormattingEditProvider(PHP_SELECTOR, new PhpFormattingProvider())
   );
 
   context.subscriptions.push(
@@ -170,11 +187,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!editor) return;
       await optimizeImports(editor, index);
       importDiagnostics.refresh(editor.document);
-    })
+    }),
+    vscode.commands.registerCommand('phpstormpp.reformat', () => vscode.commands.executeCommand('editor.action.formatDocument'))
   );
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(FileExplorerViewProvider.viewId, new FileExplorerViewProvider(context.extensionUri)),
+    vscode.window.registerWebviewViewProvider(TerminalLauncherViewProvider.viewId, new TerminalLauncherViewProvider(context.extensionUri)),
     vscode.commands.registerCommand('phpstormpp.openTerminal', () => {
       // Reuse the existing "PHPStorm++" terminal if one's already open, like
       // PhpStorm's own Terminal tool window button, rather than piling up a

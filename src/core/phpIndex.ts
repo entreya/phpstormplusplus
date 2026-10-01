@@ -99,6 +99,22 @@ export class PhpIndex implements vscode.Disposable {
     onDone?.(result.scanned, result.fromCache);
   }
 
+  /**
+   * Re-index a single file straight from disk by URI — the create/change path
+   * for the filesystem watcher. Goes through the same stat + mtime-cache +
+   * parse + cache-write path as the bulk scanner (unlike indexDocument, which
+   * is for live in-editor buffers and deliberately skips the disk cache), so a
+   * file created or modified *outside* the editor — a code generator, a git
+   * pull, a submodule checkout, or our own New File flow writing boilerplate
+   * after creating an empty file — lands in the index and disk cache exactly
+   * like a scanned file, instead of only being picked up on the next full
+   * rebuild or when the file happens to be opened/saved in the editor.
+   */
+  async indexFile(uri: vscode.Uri): Promise<void> {
+    await this.scanFiles([uri]);
+    this._onDidReindex.fire();
+  }
+
   indexDocument(document: vscode.TextDocument, notify = true): void {
     if (document.languageId !== 'php') return;
     this.applyFileIndex(document.uri.toString(), document.getText(), document.version, notify);

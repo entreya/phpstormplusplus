@@ -47,10 +47,14 @@ async function buildWebview(entry, outfile) {
   }
 }
 
+// The file-tree sidebar webview was retired in favour of the terminal
+// launcher, so its (large) browser bundle is no longer built or shipped. The
+// buildWebview helper is kept for whenever another webview needs bundling.
+void buildWebview;
+
 Promise.all([
   buildNode('src/extension.ts', 'dist/extension.js'),
-  buildNode('src/debug/debugAdapterMain.ts', 'dist/debugAdapter.js'),
-  buildWebview('src/webviews/fileExplorer/main.tsx', 'dist/webview-fileExplorer.js')
+  buildNode('src/debug/debugAdapterMain.ts', 'dist/debugAdapter.js')
 ]).catch((e) => {
   console.error(e);
   process.exit(1);

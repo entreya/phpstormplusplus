@@ -61,6 +61,12 @@ export async function searchWorkspace(query: string, useRegex: boolean, caseSens
 }
 
 /**
+ * NOTE: this webview is no longer registered in the UI — the PHPStorm++
+ * activity-bar view now hosts the terminal launcher (see TerminalLauncherViewProvider)
+ * instead of a file tree. The class is retained (unregistered) alongside the
+ * still-used `listDirectory` / `searchWorkspace` helpers below, so the tree can
+ * be brought back cheaply if wanted; its browser bundle is not built anymore.
+ *
  * Extension-host side of the custom file/folder explorer webview. This is an
  * *additional* panel, not a replacement for VS Code's native Explorer — an
  * extension has no API to replace or re-render VS Code's own UI, only to add
