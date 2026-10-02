@@ -28,6 +28,15 @@ export class PhpIndex implements vscode.Disposable {
   private diskCache = new Map<string, CachedFileEntry>();
   private cacheDirty = false;
 
+  /** De-dupe/throttle state for ensureClassIndexed, so Ctrl-hovering a symbol
+   * (which calls the definition provider repeatedly) never fires the same
+   * findFiles over and over — the thing that made the clickable link appear
+   * late or not at all. In-flight lookups are shared; a fruitless lookup is
+   * remembered briefly so we don't keep re-searching a name with no file. */
+  private ensureInFlight = new Map<string, Promise<void>>();
+  private ensureMissAt = new Map<string, number>();
+  private static readonly ENSURE_MISS_TTL_MS = 15000;
+
   async loadDiskCache(storageDir: vscode.Uri | undefined): Promise<void> {
     this.diskCache = storageDir ? await loadCache(storageDir) : new Map();
   }
@@ -129,17 +138,40 @@ export class PhpIndex implements vscode.Disposable {
   async ensureClassIndexed(simpleName: string): Promise<void> {
     const name = simpleName.replace(/^\\/, '').split('\\').pop() ?? '';
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return;
+    // Already in the index — the fast, common path. No search.
     const known = this.classesByName.get(name);
     if (known && known.length > 0) return;
+    // A recent search for this name found nothing — don't keep hammering
+    // findFiles on every hover for 15s (newly created files still get picked
+    // up by the watcher / onDidCreateFiles, which populate classesByName above).
+    const missedAt = this.ensureMissAt.get(name);
+    if (missedAt !== undefined && Date.now() - missedAt < PhpIndex.ENSURE_MISS_TTL_MS) return;
+    // Share one lookup across the repeated calls a single Ctrl-hover triggers.
+    const inFlight = this.ensureInFlight.get(name);
+    if (inFlight) return inFlight;
+    const task = this.locateAndIndexByName(name);
+    this.ensureInFlight.set(name, task);
+    try {
+      await task;
+    } finally {
+      this.ensureInFlight.delete(name);
+    }
+  }
+
+  private async locateAndIndexByName(name: string): Promise<void> {
     let uris: vscode.Uri[];
     try {
       uris = await vscode.workspace.findFiles(`**/${name}.php`, '**/{node_modules,.git}/**', 25);
     } catch {
       return;
     }
-    if (uris.length === 0) return;
+    if (uris.length === 0) {
+      this.ensureMissAt.set(name, Date.now());
+      return;
+    }
     await this.scanFiles(uris);
     this._onDidReindex.fire();
+    if (!this.classesByName.has(name)) this.ensureMissAt.set(name, Date.now());
   }
 
   /**
