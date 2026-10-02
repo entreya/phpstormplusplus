@@ -33,11 +33,13 @@ export interface SmartMatch extends RawMatch {
 export interface SearchSpec {
   /** The user's raw query. */
   query: string;
-  /** Regex actually run — a word-boundary match on the escaped query by
-   * default, or the query verbatim when the user asked for regex mode. */
+  /** Regex actually run — a plain substring ("like") match on the escaped
+   * query by default, a whole-word match when wholeWord is set, or the query
+   * verbatim in regex mode. */
   pattern: string;
   isRegex: boolean;
   caseSensitive: boolean;
+  wholeWord: boolean;
 }
 
 export type SearchEngine = 'ripgrep' | 'grep' | 'node';
@@ -51,29 +53,34 @@ export interface SearchResult {
 const MAX_MATCHES = 500;
 
 /**
- * Turn a raw user query into the regex to run. The guiding rule (option A): a
- * bare identifier is searched *broadly* — a word-boundary match that finds the
- * definition, the `$variable`, and every call site in one pass — and the
- * results are categorized afterwards (see categorize). We do NOT pre-narrow to
- * `function foo`, which would hide the variable/usages the user also wants.
+ * Turn a raw user query into the regex to run. The guiding rule (option A): the
+ * query is searched *broadly* and the results are categorized/ranked afterwards
+ * (see categorize / groupAndRank). By default a plain identifier is a *substring*
+ * ("like") match, so typing `PromoteSt` finds `PromoteStudent`,
+ * `PromoteStudentController`, `$promoteStudent`, every call site — not just an
+ * exact whole word. Enable `wholeWord` to require an exact word match instead.
  */
-export function buildSearchSpec(query: string, opts?: { regex?: boolean; caseSensitive?: boolean }): SearchSpec {
+export function buildSearchSpec(
+  query: string,
+  opts?: { regex?: boolean; caseSensitive?: boolean; wholeWord?: boolean }
+): SearchSpec {
   const trimmed = query.trim();
+  const wholeWord = !!opts?.wholeWord;
   const isRegex = !!opts?.regex || looksLikeRegex(trimmed);
   const caseSensitive = opts?.caseSensitive ?? false;
 
   let pattern: string;
   if (isRegex) {
     pattern = trimmed;
-  } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
-    // A single identifier: match it as a whole word so `grace` doesn't also hit
-    // `graceful`/`disgrace`. \b works identically in rg, grep -E and JS regex.
+  } else if (wholeWord && /^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    // Opt-in exact match: `grace` won't also hit `graceful`/`disgrace`.
     pattern = `\\b${escapeRegex(trimmed)}\\b`;
   } else {
-    // A phrase or anything with punctuation: literal substring match.
+    // Default: substring match — find the query anywhere, including as a prefix
+    // or part of a longer identifier. Ranking floats whole-word hits to the top.
     pattern = escapeRegex(trimmed);
   }
-  return { query: trimmed, pattern, isRegex, caseSensitive };
+  return { query: trimmed, pattern, isRegex, caseSensitive, wholeWord };
 }
 
 /** Heuristic: treat the query as a regex only when it actually contains regex
@@ -101,15 +108,18 @@ export function categorize(query: string, lineText: string): MatchCategory {
   const safe = escapeRegex(id);
   if (!id) return 'usage';
 
+  // The query may be a *substring* of the actual symbol name (e.g. "PromoteSt"
+  // matching `class PromoteStudent`), so allow word chars around it. Classify
+  // case-insensitively, matching the default search.
   const defPatterns = [
-    new RegExp(`\\bfunction\\s+&?\\s*${safe}\\b`),
-    new RegExp(`\\b(?:class|interface|trait|enum)\\s+${safe}\\b`),
-    new RegExp(`\\bconst\\s+${safe}\\b`),
-    new RegExp(`\\bdefine\\s*\\(\\s*['"]${safe}['"]`)
+    new RegExp(`\\bfunction\\s+&?\\s*\\w*${safe}\\w*`, 'i'),
+    new RegExp(`\\b(?:class|interface|trait|enum)\\s+\\w*${safe}\\w*`, 'i'),
+    new RegExp(`\\bconst\\s+\\w*${safe}\\w*`, 'i'),
+    new RegExp(`\\bdefine\\s*\\(\\s*['"]\\w*${safe}\\w*['"]`, 'i')
   ];
   for (const p of defPatterns) if (p.test(lineText)) return 'definition';
 
-  if (new RegExp(`\\$${safe}\\b`).test(lineText)) return 'variable';
+  if (new RegExp(`\\$\\w*${safe}\\w*`, 'i').test(lineText)) return 'variable';
   return 'usage';
 }
 
@@ -117,10 +127,18 @@ export function categorize(query: string, lineText: string): MatchCategory {
  * within a group by file then line. */
 const CATEGORY_ORDER: Record<MatchCategory, number> = { definition: 0, variable: 1, usage: 2 };
 
-export function groupAndRank(matches: SmartMatch[]): SmartMatch[] {
+export function groupAndRank(matches: SmartMatch[], query?: string): SmartMatch[] {
+  // With substring matching, float exact whole-word hits above partial ones
+  // within each category — so searching "Promote" lists `Promote` before
+  // `PromoteStudentController`.
+  const bareName = (query ?? '').replace(/^\\b|\\b$/g, '').replace(/[.*+?^${}()|[\]\\]/g, '');
+  const wordRe = bareName ? new RegExp(`\\b${escapeRegex(bareName)}\\b`, 'i') : undefined;
+  const wordBoost = (match: SmartMatch): number => (wordRe && wordRe.test(match.text) ? 0 : 1);
+
   return [...matches].sort(
     (a, b) =>
       CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category] ||
+      wordBoost(a) - wordBoost(b) ||
       a.file.localeCompare(b.file) ||
       a.line - b.line
   );
@@ -188,7 +206,7 @@ export async function runSmartGrep(
 
   const truncated = raw.length > MAX_MATCHES;
   const matches: SmartMatch[] = raw.slice(0, MAX_MATCHES).map((m) => ({ ...m, category: categorize(spec.query, m.text) }));
-  return { engine: used, matches: groupAndRank(matches), truncated };
+  return { engine: used, matches: groupAndRank(matches, spec.query), truncated };
 }
 
 const COMMON_EXCLUDES = ['node_modules', '.git', 'vendor', 'runtime', 'web/assets'];

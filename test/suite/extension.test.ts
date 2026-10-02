@@ -685,10 +685,29 @@ suite('PHPStorm++ extension', () => {
 
   // ---- Smart Grep ----
 
-  test('buildSearchSpec: a bare identifier becomes a broad word-boundary match (not pre-narrowed to a function)', () => {
-    const spec = buildSearchSpec('calculateGrace');
+  test('buildSearchSpec: a bare identifier is a substring ("like") match by default', () => {
+    const spec = buildSearchSpec('PromoteSt');
     assert.strictEqual(spec.isRegex, false);
-    assert.strictEqual(spec.pattern, '\\bcalculateGrace\\b', 'bare identifier should match as a whole word, catching defs/vars/usages alike');
+    assert.strictEqual(spec.wholeWord, false);
+    assert.strictEqual(spec.pattern, 'PromoteSt', 'default should be a plain substring so partial names match');
+    // The pattern must actually match a longer identifier that contains it
+    // (case-insensitively, the way the search engines are invoked).
+    assert.ok(new RegExp(spec.pattern, 'i').test('class PromoteStudentController'), 'PromoteSt should match PromoteStudentController');
+    assert.ok(new RegExp(spec.pattern, 'i').test('$promoteStudent = 1;'), 'PromoteSt should match $promoteStudent');
+  });
+
+  test('buildSearchSpec: wholeWord opt-in produces an exact word match', () => {
+    const spec = buildSearchSpec('grace', { wholeWord: true });
+    assert.strictEqual(spec.pattern, '\\bgrace\\b');
+    assert.ok(new RegExp(spec.pattern).test('return grace;'));
+    assert.ok(new RegExp(spec.pattern).test('graceful') === false, 'whole word should not hit graceful');
+  });
+
+  test('categorize: recognizes a definition even when the query is only a prefix of the name', () => {
+    assert.strictEqual(categorize('PromoteSt', 'class PromoteStudentController extends Base {'), 'definition');
+    assert.strictEqual(categorize('PromoteSt', 'public function promoteStudents($list) {'), 'definition');
+    assert.strictEqual(categorize('Promote', '$promoteStudentQueue = [];'), 'variable');
+    assert.strictEqual(categorize('PromoteSt', 'return $this->promoteStudents($list);'), 'usage');
   });
 
   test('buildSearchSpec: regex metacharacters flip it into regex mode verbatim', () => {

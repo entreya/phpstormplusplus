@@ -45,7 +45,11 @@ export class SmartGrepPanel {
   private async onMessage(msg: any): Promise<void> {
     switch (msg?.type) {
       case 'search':
-        await this.doSearch(String(msg.query ?? ''), { regex: !!msg.regex, caseSensitive: !!msg.caseSensitive });
+        await this.doSearch(String(msg.query ?? ''), {
+          regex: !!msg.regex,
+          caseSensitive: !!msg.caseSensitive,
+          wholeWord: !!msg.wholeWord
+        });
         break;
       case 'preview':
         await this.doPreview(String(msg.file), Number(msg.line));
@@ -56,7 +60,7 @@ export class SmartGrepPanel {
     }
   }
 
-  private async doSearch(query: string, opts: { regex: boolean; caseSensitive: boolean }): Promise<void> {
+  private async doSearch(query: string, opts: { regex: boolean; caseSensitive: boolean; wholeWord: boolean }): Promise<void> {
     const seq = ++this.searchSeq;
     this.cancelSource?.cancel();
     this.cancelSource?.dispose();
@@ -200,7 +204,8 @@ export class SmartGrepPanel {
 </head>
 <body>
   <div class="top">
-    <input id="q" type="text" placeholder="Search functions, classes, variables, text…  (⏎ to open)" autofocus>
+    <input id="q" type="text" placeholder="Search — partial names match too, e.g. PromoteSt finds PromoteStudent  (⏎ to open)" autofocus>
+    <span id="ww" class="toggle" title="Whole word only (exact match)">\\b</span>
     <span id="rx" class="toggle" title="Treat query as a regular expression">.*</span>
     <span id="cs" class="toggle" title="Case sensitive">Aa</span>
     <span id="spin" class="spinner"></span>
@@ -220,21 +225,23 @@ export class SmartGrepPanel {
     const pbody = document.getElementById('pbody');
     const rx = document.getElementById('rx');
     const cs = document.getElementById('cs');
+    const ww = document.getElementById('ww');
     let flat = [];       // flattened match list in display order
     let selected = -1;
     let debounce;
 
-    function opts() { return { regex: rx.classList.contains('on'), caseSensitive: cs.classList.contains('on') }; }
+    function opts() { return { regex: rx.classList.contains('on'), caseSensitive: cs.classList.contains('on'), wholeWord: ww.classList.contains('on') }; }
     function fire() {
       clearTimeout(debounce);
       debounce = setTimeout(() => {
         const o = opts();
-        vscodeApi.postMessage({ type: 'search', query: q.value, regex: o.regex, caseSensitive: o.caseSensitive });
+        vscodeApi.postMessage({ type: 'search', query: q.value, regex: o.regex, caseSensitive: o.caseSensitive, wholeWord: o.wholeWord });
       }, 180);
     }
     q.addEventListener('input', fire);
     rx.addEventListener('click', () => { rx.classList.toggle('on'); fire(); });
     cs.addEventListener('click', () => { cs.classList.toggle('on'); fire(); });
+    ww.addEventListener('click', () => { ww.classList.toggle('on'); fire(); });
 
     q.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
