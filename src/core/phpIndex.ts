@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fsp from 'fs/promises';
+import * as path from 'path';
 import { extractFileIndex } from './symbolExtractor';
 import { ClassSymbol, FileIndex, FunctionSymbol } from './symbols';
 import { CachedFileEntry, deserializeFileIndex, loadCache, saveCache, serializeFileIndex } from './indexCache';
@@ -114,6 +116,71 @@ export class PhpIndex implements vscode.Disposable {
     await this.scanFiles([uri]);
     this._onDidReindex.fire();
   }
+
+  /**
+   * Background-index every .php file under a real on-disk directory that lives
+   * *outside* any workspace folder — specifically a symlink target (see
+   * symlinkRoots.ts). `vscode.workspace.findFiles` can't be used here because it
+   * won't cross a symlink / reach outside the workspace, so this walks the tree
+   * with node's fs directly, then feeds the collected URIs through the same
+   * cached scanFiles path as everything else (mtime cache, yielding batches,
+   * progressive onDidReindex). Heavy well-known noise dirs are skipped.
+   */
+  async indexDirectory(realDir: string, onDone?: (scanned: number, fromCache: number) => void): Promise<void> {
+    const uris: vscode.Uri[] = [];
+    await this.collectPhpFiles(realDir, uris);
+    const result = await this.scanFiles(uris, undefined, 'linked source');
+    this._onDidReindex.fire();
+    onDone?.(result.scanned, result.fromCache);
+  }
+
+  private async collectPhpFiles(dir: string, out: vscode.Uri[]): Promise<void> {
+    let entries;
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') && entry.name !== '.') continue;
+      const full = path.join(dir, entry.name);
+      // withFileTypes on a symlinked entry reports it as a link; follow dirs we
+      // care about via stat so nested links (common in these trees) still walk.
+      let isDir = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        try {
+          const st = await fsp.stat(full);
+          isDir = st.isDirectory();
+          isFile = st.isFile();
+        } catch {
+          continue;
+        }
+      }
+      if (isDir) {
+        if (PhpIndex.WALK_SKIP_DIRS.has(entry.name)) continue;
+        await this.collectPhpFiles(full, out);
+      } else if (isFile && entry.name.endsWith('.php')) {
+        out.push(vscode.Uri.file(full));
+      }
+    }
+  }
+
+  private static readonly WALK_SKIP_DIRS = new Set([
+    '.git',
+    'node_modules',
+    'runtime',
+    'web',
+    'tests',
+    'Tests',
+    'test',
+    'Test',
+    'docs',
+    'doc',
+    'examples',
+    'example',
+    'bin'
+  ]);
 
   indexDocument(document: vscode.TextDocument, notify = true): void {
     if (document.languageId !== 'php') return;

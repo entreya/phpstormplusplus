@@ -7,7 +7,10 @@ import { tokenizePhp } from '../../src/language/previewPanel';
 import { PhpIndex } from '../../src/core/phpIndex';
 import { listDirectory, searchWorkspace } from '../../src/fileExplorerViewProvider';
 import { formatPhp } from '../../src/language/formatter';
+import { discoverSymlinkRoots } from '../../src/core/symlinkRoots';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 
 // Compiled from test/tsconfig.json with rootDir ".." (so src/ can be imported
 // directly for unit tests), so this file lands at out-test/test/suite/... —
@@ -617,5 +620,56 @@ suite('PHPStorm++ extension', () => {
     const matches = vscode.window.terminals.filter((t) => t.name === 'PHPStorm++');
     assert.strictEqual(matches.length, 1, 'expected exactly one reused PHPStorm++ terminal');
     if (!preexisting) matches[0].dispose();
+  });
+
+  test('discoverSymlinkRoots resolves a directory symlink that points outside the workspace', async function () {
+    this.timeout(15000);
+    // A real external source dir with a PHP file, plus a symlink to it placed
+    // inside the workspace (fixtures) — the Composer-path-repo shape.
+    const externalDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'phpstormpp-linked-'));
+    const pkgDir = path.join(externalDir, 'pkg', 'src');
+    await fsp.mkdir(pkgDir, { recursive: true });
+    await fsp.writeFile(path.join(pkgDir, 'LinkedThing.php'), '<?php\nnamespace Linked;\nclass LinkedThing {}\n');
+
+    const linkDir = path.join(fixtures, 'vendor-link-test');
+    await fsp.mkdir(linkDir, { recursive: true });
+    const linkPath = path.join(linkDir, 'pkg');
+    try {
+      await fsp.symlink(path.join(externalDir, 'pkg'), linkPath, 'dir');
+
+      const folder: vscode.WorkspaceFolder = {
+        uri: vscode.Uri.file(fixtures),
+        name: 'fixtures',
+        index: 0
+      };
+      const roots = await discoverSymlinkRoots([folder]);
+      const hit = roots.find((r) => r.realPath === fs.realpathSync(path.join(externalDir, 'pkg')));
+      assert.ok(hit, `expected the external symlink target to be discovered, got: ${roots.map((r) => r.realPath).join(', ')}`);
+    } finally {
+      await fsp.rm(linkDir, { recursive: true, force: true });
+      await fsp.rm(externalDir, { recursive: true, force: true });
+    }
+  });
+
+  test('indexDirectory indexes PHP classes living behind a symlink target (outside the workspace)', async function () {
+    this.timeout(15000);
+    const externalDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'phpstormpp-extsrc-'));
+    await fsp.mkdir(path.join(externalDir, 'nested'), { recursive: true });
+    await fsp.writeFile(path.join(externalDir, 'Alpha.php'), '<?php\nnamespace Ext;\nclass AlphaExt {}\n');
+    await fsp.writeFile(path.join(externalDir, 'nested', 'Beta.php'), '<?php\nnamespace Ext\\Nested;\nclass BetaExt {}\n');
+    // A dir that must be skipped by the walker.
+    await fsp.mkdir(path.join(externalDir, 'node_modules'), { recursive: true });
+    await fsp.writeFile(path.join(externalDir, 'node_modules', 'Skip.php'), '<?php\nclass SkipMeExt {}\n');
+
+    const idx = new PhpIndex();
+    try {
+      await idx.indexDirectory(externalDir);
+      assert.ok(idx.findClassByFqcn('Ext\\AlphaExt'), 'expected a top-level class behind the directory to be indexed');
+      assert.ok(idx.findClassByFqcn('Ext\\Nested\\BetaExt'), 'expected a nested class to be indexed');
+      assert.strictEqual(idx.findClassesByName('SkipMeExt').length, 0, 'expected node_modules/ under the target to be skipped');
+    } finally {
+      idx.dispose();
+      await fsp.rm(externalDir, { recursive: true, force: true });
+    }
   });
 });

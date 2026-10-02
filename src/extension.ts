@@ -20,6 +20,9 @@ import { optimizeImports } from './refactor/importManager';
 import { registerSearchEverywhere } from './language/searchEverywhere';
 import { detectFrameworks } from './frameworks/genericDetector';
 import { newPhpClass, registerAutoClassOnCreate } from './refactor/newPhpClass';
+import { discoverSymlinkRoots } from './core/symlinkRoots';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PreviewViewProvider } from './language/previewPanel';
 import { checkForUpdates } from './updateChecker';
 import { registerCommandCenter } from './commandCenter';
@@ -124,6 +127,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidDelete((uri) => index.removeFile(uri));
   context.subscriptions.push(watcher);
 
+  // Symlinked source (e.g. Composer path repos wiring vendor/uims/* to
+  // ../submodules/uims_*) lives physically outside the workspace folder, so
+  // neither findFiles nor VS Code's own watcher reaches it. Resolve those links
+  // to their real targets and put our own node fs.watch on each, so creating or
+  // changing a .php file behind a symlink indexes automatically — no multi-root
+  // workspace or followSymlinks setting required from the user. Opt out with
+  // phpstormpp.index.followSymlinkedRoots = false.
+  if (vscode.workspace.getConfiguration('phpstormpp').get<boolean>('index.followSymlinkedRoots', true)) {
+    void setupSymlinkedRoots(index, reindexFromDisk, cacheDir, context);
+  }
+
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(PHP_SELECTOR, new PhpHoverProvider(index)),
     vscode.languages.registerDefinitionProvider(PHP_SELECTOR, new PhpDefinitionProvider(index)),
@@ -218,6 +232,81 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(...registerCommandCenter());
+}
+
+/**
+ * Discover symlinked source roots (links in the workspace that resolve to real
+ * directories outside it), background-index each one, and put a recursive
+ * node fs.watch on its real path so creates/changes/deletes behind the link are
+ * indexed live — the piece VS Code's own watcher can't do.
+ */
+async function setupSymlinkedRoots(
+  index: PhpIndex,
+  reindexFromDisk: (uri: vscode.Uri) => Promise<void>,
+  cacheDir: vscode.Uri | undefined,
+  context: vscode.ExtensionContext
+): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return;
+
+  let roots;
+  try {
+    roots = await discoverSymlinkRoots(folders);
+  } catch {
+    return;
+  }
+  if (roots.length === 0) return;
+
+  // fs.watch recursion coalesces rapid events, so debounce per-path re-indexing
+  // to avoid parsing the same file several times during a bulk write / git op.
+  const pending = new Map<string, NodeJS.Timeout>();
+  const schedule = (realFile: string): void => {
+    const existing = pending.get(realFile);
+    if (existing) clearTimeout(existing);
+    pending.set(
+      realFile,
+      setTimeout(() => {
+        pending.delete(realFile);
+        const uri = vscode.Uri.file(realFile);
+        fs.promises
+          .stat(realFile)
+          .then((st) => (st.isFile() ? reindexFromDisk(uri) : Promise.resolve()))
+          .catch(() => index.removeFile(uri)); // vanished -> drop it
+      }, 150)
+    );
+  };
+
+  for (const root of roots) {
+    try {
+      const watcher = fs.watch(root.realPath, { recursive: true }, (_event, filename) => {
+        if (!filename) return;
+        const name = filename.toString();
+        if (!name.endsWith('.php')) return;
+        schedule(path.join(root.realPath, name));
+      });
+      context.subscriptions.push({ dispose: () => watcher.close() });
+    } catch {
+      // Platform without recursive fs.watch support, or unreadable path — skip
+      // this root rather than failing the whole activation.
+      continue;
+    }
+  }
+
+  // Kick off the initial background index of everything behind the links, so
+  // existing symlinked source is searchable without waiting for the first edit.
+  let totalScanned = 0;
+  for (const root of roots) {
+    await index.indexDirectory(root.realPath, (scanned) => {
+      totalScanned += scanned;
+    });
+    await index.flushDiskCache(cacheDir);
+  }
+  if (totalScanned > 0) {
+    vscode.window.setStatusBarMessage(
+      `PHPStorm++: indexed ${totalScanned} files from ${roots.length} linked source root(s) (${index.allClasses().length} classes total).`,
+      6000
+    );
+  }
 }
 
 export async function deactivate(): Promise<void> {

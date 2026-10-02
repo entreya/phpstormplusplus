@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, a code formatter, live templates, Xdebug debugging, and pluggable framework support (starting with Yii2).",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -259,6 +259,11 @@
           "default": 1,
           "minimum": 0,
           "description": "Maximum number of consecutive blank lines the PHPStorm++ formatter keeps (outside heredocs/strings)."
+        },
+        "phpstormpp.index.followSymlinkedRoots": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also index and watch PHP source behind directory symlinks that point outside the workspace (e.g. Composer path repositories linking vendor/* to sibling submodules). Lets files added or changed behind those links be indexed automatically, which VS Code's own watcher does not do."
         }
       }
     },

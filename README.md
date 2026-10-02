@@ -14,7 +14,7 @@ below for what's intentionally out of scope for now.
 
 | Area | What works today |
 |---|---|
-| **Code intelligence** | Workspace-wide PHP indexer (`src/core`) built on `php-parser`; hover, go-to-definition, find references, rename, document/workspace symbols, and context-aware completion (`->`, `::`, `new`) with lightweight local type inference. |
+| **Code intelligence** | Workspace-wide PHP indexer (`src/core`) built on `php-parser`; hover, go-to-definition, find references, rename, document/workspace symbols, and context-aware completion (`->`, `::`, `new`) with lightweight local type inference. Files created or changed outside the editor are indexed live, including source behind directory symlinks that point outside the workspace (e.g. Composer path repositories linking `vendor/*` to sibling submodules) — a case VS Code's own watcher doesn't cover. Toggle with `phpstormpp.index.followSymlinkedRoots`. |
 | **Refactoring** | Extract Variable, Extract Method (heuristic parameter inference), Generate Constructor, Generate Getters/Setters, Generate PHPDoc, and cross-file Rename Symbol. |
 | **Formatting** | Own PHP formatter (`src/language/formatter.ts`) wired as the default `Format Document` provider for PHP. A deliberately safe reindenter: depth from real bracket tokens only, heredoc/nowdoc bodies + closers, multi-line strings, comments and inline HTML left byte-for-byte intact, trailing whitespace trimmed, blank-line runs collapsed (`phpstormpp.format.maxConsecutiveBlankLines`). It only ever rewrites whitespace, and bails without editing if anything else would change — so it can't corrupt code. |
 | **Live Templates** | PhpStorm-style abbreviation snippets (`fore`, `iff`, `try`, `pubf`, `docb`, ...) plus a `phpstormpp.liveTemplates` setting for your own. |
@@ -47,7 +47,7 @@ VS Code Extension Development Host (not just `tsc`) — see "Testing" below.
 ## Project layout
 
 ```
-src/core/        PHP parsing + workspace symbol index (php-parser wrapper, extractor, PhpIndex)
+src/core/        PHP parsing + workspace symbol index (php-parser wrapper, extractor, PhpIndex, symlinked-root discovery)
 src/language/    hover, go-to-definition, find references, completion, document/workspace symbols, formatter, terminal launcher
 src/refactor/    rename, extract variable/method, generate constructor/getters-setters, PHPDoc
 src/templates/   Live Templates engine + default template set
