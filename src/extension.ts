@@ -61,37 +61,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('phpstormpp.checkForUpdates', () => checkForUpdates(context, currentVersion, true))
   );
 
-  const { scanned, fromCache: projectFromCache } = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing project PHP files' },
-    (progress) => index.indexWorkspace(progress)
-  );
-  await index.flushDiskCache(cacheDir);
-
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
-  const detected = workspaceRoot ? await detectFrameworks(workspaceRoot) : [];
-  const detectedLabel = detected.length ? ` — detected ${detected.map((d) => d.name).join(', ')}` : '';
-  const cacheLabel = projectFromCache > 0 ? ` (${projectFromCache} from cache)` : '';
-  vscode.window.setStatusBarMessage(
-    `PHPStorm++: indexed ${scanned} project files${cacheLabel}${detectedLabel}. Scanning vendor/ in the background...`,
-    6000
-  );
-
-  // vendor/ (framework + dependency source) can be huge, so it's scanned in the
-  // background in small yielding batches instead of blocking activation — see
-  // PhpIndex.indexVendorInBackground. Autocomplete for deep vendor classes fills
-  // in progressively rather than being capped or gated behind a wait. Unchanged
-  // vendor files load straight from the disk cache instead of being re-parsed —
-  // by far the biggest win, since dependencies rarely change between sessions.
-  void index.indexVendorInBackground(async (vendorScanned, vendorFromCache) => {
-    if (vendorScanned > 0) {
-      const vendorCacheLabel = vendorFromCache > 0 ? ` (${vendorFromCache} from cache)` : '';
-      vscode.window.setStatusBarMessage(
-        `PHPStorm++: finished indexing ${vendorScanned} vendor/ files${vendorCacheLabel} (${index.allClasses().length} classes total).`,
-        6000
-      );
-    }
-    await index.flushDiskCache(cacheDir);
-  });
+  // NOTE: the workspace/vendor indexing scan is intentionally NOT run here.
+  // It's kicked off (in the background) at the very end of activate, AFTER every
+  // provider and command is registered — see startBackgroundIndexing below — so
+  // go-to-definition / hover / the Ctrl-hover link are live from the first
+  // moment rather than dead until a large multi-root scan finishes.
 
   const importDiagnostics = createImportDiagnostics(index);
   context.subscriptions.push(importDiagnostics.collection);
@@ -256,6 +230,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(...registerCommandCenter());
+
+  // Everything above is registered and live. NOW start the heavy indexing in
+  // the background so it never gates the editor features.
+  void startBackgroundIndexing(index, cacheDir);
+}
+
+/**
+ * Runs the project scan, then the vendor scan, in the background — reporting
+ * progress but never blocking activation or provider registration. Providers
+ * resolve against whatever is already indexed and fill the rest in via their
+ * on-demand fallback, so there's no window where features are dead.
+ */
+async function startBackgroundIndexing(index: PhpIndex, cacheDir: vscode.Uri | undefined): Promise<void> {
+  const { scanned, fromCache: projectFromCache } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'PHPStorm++: indexing project PHP files' },
+    (progress) => index.indexWorkspace(progress)
+  );
+  await index.flushDiskCache(cacheDir);
+
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+  const detected = workspaceRoot ? await detectFrameworks(workspaceRoot) : [];
+  const detectedLabel = detected.length ? ` — detected ${detected.map((d) => d.name).join(', ')}` : '';
+  const cacheLabel = projectFromCache > 0 ? ` (${projectFromCache} from cache)` : '';
+  vscode.window.setStatusBarMessage(
+    `PHPStorm++: indexed ${scanned} project files${cacheLabel}${detectedLabel}. Scanning vendor/ in the background...`,
+    6000
+  );
+
+  void index.indexVendorInBackground(async (vendorScanned, vendorFromCache) => {
+    if (vendorScanned > 0) {
+      const vendorCacheLabel = vendorFromCache > 0 ? ` (${vendorFromCache} from cache)` : '';
+      vscode.window.setStatusBarMessage(
+        `PHPStorm++: finished indexing ${vendorScanned} vendor/ files${vendorCacheLabel} (${index.allClasses().length} classes total).`,
+        6000
+      );
+    }
+    await index.flushDiskCache(cacheDir);
+  });
 }
 
 /**

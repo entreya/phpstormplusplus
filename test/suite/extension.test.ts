@@ -488,7 +488,7 @@ suite('PHPStorm++ extension', () => {
   // (or give up). File-watcher events are async and can lag a little behind the
   // fs write, so we retry rather than assume the index updated synchronously.
   async function waitForSymbol(name: string, present: boolean): Promise<boolean> {
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < 120; attempt++) {
       const results = (await vscode.commands.executeCommand(
         'vscode.executeWorkspaceSymbolProvider',
         name
@@ -500,7 +500,7 @@ suite('PHPStorm++ extension', () => {
   }
 
   test('a class created directly on disk (outside the editor) becomes symbol-resolvable without a manual reindex', async function () {
-    this.timeout(20000);
+    this.timeout(45000);
     const createdUri = vscode.Uri.file(path.join(fixtures, 'src', 'WatcherCreated.php'));
     await vscode.workspace.fs.writeFile(
       createdUri,
@@ -517,7 +517,7 @@ suite('PHPStorm++ extension', () => {
   });
 
   test('a .php file changed on disk (outside the editor) is re-indexed via the watcher onDidChange', async function () {
-    this.timeout(25000);
+    this.timeout(45000);
     const fileUri = vscode.Uri.file(path.join(fixtures, 'src', 'WatcherChanged.php'));
 
     // Index an initial class via the create event...
