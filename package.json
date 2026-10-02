@@ -2,7 +2,7 @@
   "name": "phpstormplusplus",
   "displayName": "PHPStorm++",
   "description": "PhpStorm-style IDE features for PHP in VS Code: code intelligence, refactorings, a code formatter, live templates, Xdebug debugging, and pluggable framework support (starting with Yii2).",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "publisher": "phpstormplusplus",
   "engines": {
     "vscode": "^1.85.0"
@@ -93,6 +93,10 @@
       {
         "command": "phpstormpp.reformat",
         "title": "PHPStorm++: Reformat Code"
+      },
+      {
+        "command": "phpstormpp.smartGrep",
+        "title": "PHPStorm++: Smart Grep (Intelligent Search)"
       }
     ],
     "submenus": [
@@ -328,6 +332,11 @@
         "command": "phpstormpp.searchEverywhere",
         "key": "ctrl+;",
         "mac": "cmd+;"
+      },
+      {
+        "command": "phpstormpp.smartGrep",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h"
       },
       {
         "command": "phpstormpp.openCommandCenter",

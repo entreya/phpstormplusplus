@@ -25,6 +25,7 @@ function buildItems(): (CenterItem | vscode.QuickPickItem)[] {
   return [
     separator('Navigate & Search'),
     { label: '$(search) Search Everywhere', description: 'Cmd+; / Ctrl+;', action: run('phpstormpp.searchEverywhere') },
+    { label: '$(regex) Smart Grep', description: 'Cmd+Shift+H / Ctrl+Shift+H — grouped grep with live preview', action: run('phpstormpp.smartGrep') },
     { label: '$(new-file) New PHP Class...', action: run('phpstormpp.newPhpClass') },
     { label: '$(refresh) Rebuild PHP Index', action: run('phpstormpp.reindex') },
 

@@ -21,6 +21,7 @@ import { registerSearchEverywhere } from './language/searchEverywhere';
 import { detectFrameworks } from './frameworks/genericDetector';
 import { newPhpClass, registerAutoClassOnCreate } from './refactor/newPhpClass';
 import { discoverSymlinkRoots } from './core/symlinkRoots';
+import { SmartGrepPanel } from './language/smartGrepPanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PreviewViewProvider } from './language/previewPanel';
@@ -134,9 +135,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // changing a .php file behind a symlink indexes automatically — no multi-root
   // workspace or followSymlinks setting required from the user. Opt out with
   // phpstormpp.index.followSymlinkedRoots = false.
+  // Real paths of resolved symlink targets, filled in by setupSymlinkedRoots.
+  // Smart Grep searches these too so matches behind symlinks (submodules) show
+  // up alongside workspace files.
+  const linkedRoots: string[] = [];
   if (vscode.workspace.getConfiguration('phpstormpp').get<boolean>('index.followSymlinkedRoots', true)) {
-    void setupSymlinkedRoots(index, reindexFromDisk, cacheDir, context);
+    void setupSymlinkedRoots(index, reindexFromDisk, cacheDir, context, linkedRoots);
   }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('phpstormpp.smartGrep', () => {
+      const seedQuery = currentWordUnderCursor();
+      SmartGrepPanel.show(context.extensionUri, linkedRoots, seedQuery);
+    })
+  );
 
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(PHP_SELECTOR, new PhpHoverProvider(index)),
@@ -244,7 +256,8 @@ async function setupSymlinkedRoots(
   index: PhpIndex,
   reindexFromDisk: (uri: vscode.Uri) => Promise<void>,
   cacheDir: vscode.Uri | undefined,
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  linkedRootsOut?: string[]
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) return;
@@ -256,6 +269,7 @@ async function setupSymlinkedRoots(
     return;
   }
   if (roots.length === 0) return;
+  if (linkedRootsOut) for (const r of roots) linkedRootsOut.push(r.realPath);
 
   // fs.watch recursion coalesces rapid events, so debounce per-path re-indexing
   // to avoid parsing the same file several times during a bulk write / git op.
@@ -307,6 +321,15 @@ async function setupSymlinkedRoots(
       6000
     );
   }
+}
+
+/** The identifier under the cursor, if any — used to seed Smart Grep so
+ * invoking it on a symbol searches for that symbol immediately. */
+function currentWordUnderCursor(): string {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return '';
+  const range = editor.document.getWordRangeAtPosition(editor.selection.active, /[A-Za-z_][A-Za-z0-9_]*/);
+  return range ? editor.document.getText(range) : '';
 }
 
 export async function deactivate(): Promise<void> {
