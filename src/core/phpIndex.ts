@@ -118,6 +118,31 @@ export class PhpIndex implements vscode.Disposable {
   }
 
   /**
+   * On-demand catch-up for a class the index hasn't seen yet — the safety net
+   * behind go-to-definition. The OS file watcher can miss files created in a
+   * brand-new directory (or during a bulk write by a generator/agent), so a
+   * freshly-created class may not be indexed when the user Cmd-clicks it. PSR-4
+   * guarantees the class lives in a file of the same simple name, so a single
+   * fast `findFiles('** /<Name>.php')` locates it, we index just those files,
+   * and the caller retries resolution. No-op when the class is already known.
+   */
+  async ensureClassIndexed(simpleName: string): Promise<void> {
+    const name = simpleName.replace(/^\\/, '').split('\\').pop() ?? '';
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return;
+    const known = this.classesByName.get(name);
+    if (known && known.length > 0) return;
+    let uris: vscode.Uri[];
+    try {
+      uris = await vscode.workspace.findFiles(`**/${name}.php`, '**/{node_modules,.git}/**', 25);
+    } catch {
+      return;
+    }
+    if (uris.length === 0) return;
+    await this.scanFiles(uris);
+    this._onDidReindex.fire();
+  }
+
+  /**
    * Background-index every .php file under a real on-disk directory that lives
    * *outside* any workspace folder — specifically a symlink target (see
    * symlinkRoots.ts). `vscode.workspace.findFiles` can't be used here because it

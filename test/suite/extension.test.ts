@@ -800,4 +800,57 @@ suite('PHPStorm++ extension', () => {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes('phpstormpp.smartGrep'), 'expected phpstormpp.smartGrep to be registered');
   });
+
+  test('ensureClassIndexed locates and indexes a class by its PSR-4 file name on demand', async function () {
+    this.timeout(15000);
+    // A brand-new class file inside the workspace that no bulk scan has seen.
+    const createdUri = vscode.Uri.file(path.join(fixtures, 'src', 'LazilyFoundService.php'));
+    await vscode.workspace.fs.writeFile(
+      createdUri,
+      Buffer.from('<?php\nnamespace App;\nclass LazilyFoundService { public function run() {} }\n', 'utf8')
+    );
+    const idx = new PhpIndex();
+    try {
+      // Fresh index, nothing scanned — resolution should miss first...
+      assert.strictEqual(idx.findClassByFqcn('App\\LazilyFoundService'), undefined, 'precondition: not indexed yet');
+      // ...then the on-demand catch-up should find and index it by file name.
+      await idx.ensureClassIndexed('LazilyFoundService');
+      assert.ok(idx.findClassByFqcn('App\\LazilyFoundService'), 'expected ensureClassIndexed to locate the class by its PSR-4 file name');
+    } finally {
+      idx.dispose();
+      await vscode.workspace.fs.delete(createdUri);
+    }
+  });
+
+  test('go-to-definition resolves a class whose file was never scanned (on-demand fallback)', async function () {
+    this.timeout(15000);
+    // Target class in a new file the index hasn't seen.
+    const targetUri = vscode.Uri.file(path.join(fixtures, 'src', 'OnDemandTarget.php'));
+    await vscode.workspace.fs.writeFile(
+      targetUri,
+      Buffer.from('<?php\nnamespace App\\Models;\nclass OnDemandTarget {}\n', 'utf8')
+    );
+    // Referencing file that imports and uses it.
+    const refUri = vscode.Uri.file(path.join(fixtures, 'src', 'OnDemandUser.php'));
+    await vscode.workspace.fs.writeFile(
+      refUri,
+      Buffer.from('<?php\nnamespace App;\nuse App\\Models\\OnDemandTarget;\nclass OnDemandUser {\n    public function make() {\n        return new OnDemandTarget();\n    }\n}\n', 'utf8')
+    );
+    try {
+      const doc = await vscode.workspace.openTextDocument(refUri);
+      await vscode.window.showTextDocument(doc);
+      const text = doc.getText();
+      const position = doc.positionAt(text.indexOf('new OnDemandTarget') + 'new '.length);
+      const locations = (await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        refUri,
+        position
+      )) as vscode.Location[];
+      assert.ok(locations && locations.length > 0, 'expected a definition even though the target file was never scanned');
+      assert.match(locations[0].uri.fsPath, /OnDemandTarget\.php$/);
+    } finally {
+      await vscode.workspace.fs.delete(targetUri);
+      await vscode.workspace.fs.delete(refUri);
+    }
+  });
 });

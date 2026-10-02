@@ -6,14 +6,26 @@ import { findEnclosingClass } from './hoverProvider';
 export class PhpDefinitionProvider implements vscode.DefinitionProvider {
   constructor(private index: PhpIndex) {}
 
-  provideDefinition(document: vscode.TextDocument, position: vscode.Position): vscode.ProviderResult<vscode.Definition> {
-    const file = this.index.getFile(document.uri);
+  async provideDefinition(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Definition | undefined> {
+    // Index the file being navigated from on demand if it isn't already — e.g.
+    // a freshly-created file the background scan/watcher hasn't reached yet.
+    let file = this.index.getFile(document.uri);
+    if (!file) {
+      this.index.indexDocument(document);
+      file = this.index.getFile(document.uri);
+    }
     if (!file) return;
     const ref = resolveAt(file.ast, position);
     if (!ref) return;
 
     if (ref.type === 'class') {
-      const cls = this.index.resolveClassName(ref.name, file);
+      let cls = this.index.resolveClassName(ref.name, file);
+      if (!cls) {
+        // The target class may be a brand-new file the index hasn't seen yet.
+        // Locate + index it by its PSR-4 file name, then resolve once more.
+        await this.index.ensureClassIndexed(ref.name);
+        cls = this.index.resolveClassName(ref.name, file);
+      }
       if (cls) return new vscode.Location(vscode.Uri.parse(cls.uri), cls.nameRange);
       return;
     }

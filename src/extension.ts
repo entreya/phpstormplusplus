@@ -128,6 +128,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidDelete((uri) => index.removeFile(uri));
   context.subscriptions.push(watcher);
 
+  // Belt-and-suspenders alongside the OS watcher: files created through VS
+  // Code itself (the Explorer's New File, a WorkspaceEdit, or an AI agent
+  // writing a batch of new classes) fire onDidCreateFiles reliably, even when
+  // the native recursive watcher misses files dropped into a brand-new folder.
+  context.subscriptions.push(
+    vscode.workspace.onDidCreateFiles((e) => {
+      for (const uri of e.files) {
+        if (uri.path.endsWith('.php') || uri.path.endsWith('.phtml')) void reindexFromDisk(uri);
+      }
+    })
+  );
+
   // Symlinked source (e.g. Composer path repos wiring vendor/uims/* to
   // ../submodules/uims_*) lives physically outside the workspace folder, so
   // neither findFiles nor VS Code's own watcher reaches it. Resolve those links
