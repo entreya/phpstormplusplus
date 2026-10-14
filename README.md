@@ -165,33 +165,132 @@ code --install-extension github.vscode-github-actions
 > are safe to skip): `dart-code.dart-code`, `dart-code.flutter`, `golang.go`,
 > `ms-vscode.makefile-tools`, `openai.chatgpt`, `openai.codex-audio`.
 
-### 3. Recommended VS Code settings
+### 3. Theme, font, icons & full settings (match my setup)
 
-Put these in your **User** settings (`settings.json`) or, better for this
-project, in the multi-root `*.code-workspace` file's `"settings"` block.
+#### Font — JetBrains Mono
+
+The editor font is **JetBrains Mono** with ligatures. It isn't bundled with VS
+Code, so install the font on the OS first (otherwise VS Code silently falls back
+to Menlo/Monaco/Consolas):
+
+- **macOS:** `brew install --cask font-jetbrains-mono` (or download from
+  <https://www.jetbrains.com/lp/mono/> and double-click to install).
+- **Windows:** download from the same page, select all `.ttf` files, right-click
+  → **Install for all users**. Or `winget install --id=JetBrains.Mono` if you
+  have a package source that provides it.
+- **Linux:** `sudo apt install fonts-jetbrains-mono` (Debian/Ubuntu) or unzip the
+  download into `~/.local/share/fonts` and run `fc-cache -f`.
+
+#### Theme & icons
+
+- Color theme: **PhpStorm Dark** (from `ericgomez.phpstorm-theme`). PHPStorm++
+  also ships *PHPStorm++ Dark (Darcula-inspired)* if you prefer its own.
+- File icon theme: **phpstorm-icon** (from `phantriviethoang.phpstorm-icon`), or
+  *JetBrains* (from `chadalen.vscode-jetbrains-icon-theme`).
+
+Set them via **Preferences: Color Theme** and **Preferences: File Icon Theme**,
+or they'll apply from the settings block below.
+
+#### Settings — paste into your User `settings.json`
+
+This is the exact configuration used while building this (same on macOS, Linux
+and Windows). Open the Command Palette → **Preferences: Open User Settings
+(JSON)** and merge this in.
 
 ```jsonc
 {
-  // Use PHPStorm++ as the PHP formatter (Format Document / Format On Save).
-  "[php]": {
-    "editor.defaultFormatter": "phpstormplusplus.phpstormplusplus"
-  },
-  "editor.formatOnSave": true,
+  // --- Appearance ---
+  "workbench.colorTheme": "PhpStorm Dark",
+  "workbench.iconTheme": "phpstorm-icon",
+  "editor.fontFamily": "JetBrains Mono, Menlo, Monaco, monospace",
+  "editor.fontLigatures": true,
+  "editor.fontSize": 16,
+  "editor.lineHeight": 26,
+  "editor.fontWeight": "400",
+  "editor.cursorStyle": "line-thin",
+  "editor.cursorBlinking": "smooth",
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.smoothScrolling": true,
+  "workbench.list.smoothScrolling": true,
+  "editor.minimap.enabled": false,
+  "breadcrumbs.enabled": true,
+  "editor.stickyScroll.enabled": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.guides.indentation": true,
+  "editor.guides.highlightActiveIndentation": true,
+  "terminal.integrated.fontSize": 15,
+  "terminal.integrated.fontLigatures.enabled": true,
+  "terminal.integrated.cursorBlinking": true,
+  "explorer.compactFolders": false,
+  "workbench.editor.enablePreview": false,
+  "workbench.editor.highlightModifiedTabs": true,
 
-  // When PHPStorm++ and another PHP server (DEVSENSE/Intelephense) both resolve
-  // a symbol, jump straight to the first result instead of popping a peek.
+  // --- IntelliSense / editing feel (PhpStorm-like) ---
+  "editor.inlineSuggest.enabled": true,
+  "editor.parameterHints.enabled": true,
+  "editor.quickSuggestions": { "other": "on", "comments": "on", "strings": "on" },
+  "editor.quickSuggestionsDelay": 0,
+  "editor.acceptSuggestionOnEnter": "on",
+  "editor.tabCompletion": "on",
+  "editor.suggestSelection": "recentlyUsedByPrefix",
+  "editor.snippetSuggestions": "inline",
+  "editor.codeActions.triggerOnFocusChange": true,
+
+  // --- Go to definition: jump straight through, never peek ---
+  // Makes Ctrl/Cmd+click behave like one provider even with DEVSENSE/Intelephense also installed.
+  "editor.definitionLinkOpensInPeek": false,
   "editor.gotoLocation.multipleDefinitions": "goto",
-  "editor.gotoLocation.multipleTypeDefinitions": "goto",
+  "editor.gotoLocation.multipleDeclarations": "goto",
   "editor.gotoLocation.multipleImplementations": "goto",
+  "editor.gotoLocation.multipleReferences": "goto",
+  "editor.gotoLocation.multipleTypeDefinitions": "goto",
 
-  // PHPStorm++ specific:
+  // --- Formatting / save ---
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.formatOnType": true,
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  // My setup formats PHP with php-cs-fixer. To use PHPStorm++'s own formatter
+  // instead, set this to "phpstormplusplus.phpstormplusplus".
+  "[php]": { "editor.defaultFormatter": "junstyle.php-cs-fixer" },
+  "php-cs-fixer.rules": "@PSR12,no_unused_imports,ordered_imports,array_indentation",
+  "php-cs-fixer.onsave": true,
+  // "php-cs-fixer.executablePath": "/opt/homebrew/bin/php-cs-fixer", // macOS; Windows: "C:\\\\path\\\\to\\\\php-cs-fixer.bat"
+
+  // --- PHP language server (DEVSENSE and/or Intelephense) ---
+  "php.suggest.basic": true,
+  "intelephense.environment.phpVersion": "8.3",
+  "intelephense.completion.insertUseDeclaration": true,
+  "intelephense.files.exclude": ["**/.git/**", "**/node_modules/**", "**/vendor/bin/**", "**/views/**"],
+
+  // --- Indent Rainbow (subtle, dark-friendly) ---
+  "indentRainbow.colors": [
+    "rgba(255,255,64,0.07)", "rgba(127,255,127,0.07)",
+    "rgba(255,127,255,0.07)", "rgba(79,236,236,0.07)"
+  ],
+  "indentRainbow.errorColor": "rgba(128,32,32,0.6)",
+  "indentRainbow.tabmixColor": "rgba(128,32,96,0.6)",
+
+  // --- Search / git ---
+  "search.smartCase": true,
+  "search.followSymlinks": false,
+  "git.autofetch": true,
+
+  // --- PHPStorm++ specific ---
   // Index + watch PHP source behind directory symlinks pointing outside the
   // workspace (Composer path repos linking vendor/* to sibling submodules).
   "phpstormpp.index.followSymlinkedRoots": true,
-  // Max consecutive blank lines the formatter keeps.
+  // Max consecutive blank lines PHPStorm++'s formatter keeps.
   "phpstormpp.format.maxConsecutiveBlankLines": 1
 }
 ```
+
+> **Windows paths:** anything pointing at a binary (like
+> `php-cs-fixer.executablePath`) must use a Windows path with escaped
+> backslashes, e.g. `"C:\\\\Users\\\\you\\\\php-cs-fixer.bat"`, or a forward-slash
+> path `"C:/Users/you/php-cs-fixer.bat"`.
 
 All PHPStorm++ settings: `phpstormpp.liveTemplates`,
 `phpstormpp.frameworks.enabled`, `phpstormpp.format.maxConsecutiveBlankLines`,
