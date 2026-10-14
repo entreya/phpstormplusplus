@@ -71,6 +71,8 @@ install/update, otherwise the old extension host keeps running.
 
 ### 2. Extensions you need / want alongside it
 
+**Minimum (PHP tooling):**
+
 | Extension | Required? | Why |
 |---|---|---|
 | **phantriviethoang.phpstorm-icon** | Auto-installed | PhpStorm-style file icons. Listed in this extension's `extensionPack`, so VS Code installs it for you. |
@@ -79,6 +81,89 @@ install/update, otherwise the old extension host keeps running.
 
 You do **not** need a separate formatter extension for PHP — PHPStorm++ registers
 itself as the default `Format Document` provider for PHP.
+
+#### Full "PhpStorm-like" interface (match my setup)
+
+To reproduce the exact look and feel used while building this (theme, icons,
+PHP tooling, and the little quality-of-life extensions), install the set below.
+Grouped so you can skip anything you don't want.
+
+**Look & feel (the "it looks like PhpStorm" part):**
+
+| Extension | ID | Purpose |
+|---|---|---|
+| PhpStorm Theme | `ericgomez.phpstorm-theme` | PhpStorm/Darcula-style color theme. |
+| JetBrains Icon Theme | `chadalen.vscode-jetbrains-icon-theme` | JetBrains-style file/folder icons. |
+| PhpStorm Icon | `phantriviethoang.phpstorm-icon` | Alternative PhpStorm icon set (auto-installed by PHPStorm++). |
+| Atom Material Theme | `tobiasalthoff.atom-material-theme` | Optional alternate theme. |
+| Claude Themes | `zhangcy.claude-themes-by-zhangcy` | Optional alternate themes. |
+
+> PHPStorm++ itself also ships two themes ("PHPStorm++ Dark (Darcula-inspired)"
+> and "PHPStorm++ Light") and defaults to the dark one on first install. Pick
+> whichever theme you prefer via **Preferences: Color Theme**.
+
+**PHP language & quality:**
+
+| Extension | ID | Purpose |
+|---|---|---|
+| DEVSENSE PHP Tools | `devsense.phptools-vscode` | Full PHP language server + diagnostics. |
+| DEVSENSE Composer | `devsense.composer-php-vscode` | Composer integration. |
+| DEVSENSE PHP Intelli | `devsense.intelli-php-vscode` | AI-assisted PHP completion. |
+| DEVSENSE PHP Profiler | `devsense.profiler-php-vscode` | Profiling support. |
+| PHP CS Fixer | `junstyle.php-cs-fixer` | Coding-standards fixer (separate from PHPStorm++'s formatter). |
+| PHP String Syntax | `ericgomez.php-string-syntax` | Highlight embedded languages inside PHP strings. |
+
+**Editor quality-of-life (the subtle PhpStorm-ish touches):**
+
+| Extension | ID | Purpose |
+|---|---|---|
+| GitLens | `eamodio.gitlens` | Inline blame / history (PhpStorm-style VCS annotations). |
+| Indent Rainbow | `oderwat.indent-rainbow` | Colored indentation guides. |
+| Breakpoint Highlight | `ericgomez.breakpoint-highlight` | More visible breakpoint lines. |
+| JS String Syntax | `ericgomez.js-string-syntax` | Embedded-language highlight in JS strings. |
+| Rainbow CSV | `mechatroner.rainbow-csv` | Column-colored CSV viewing. |
+| Prettier SQL | `inferrinizzard.prettier-sql-vscode` | SQL formatting. |
+| GitHub-style Markdown Preview | `mccprogrammer.github-style-markdown-preview` | GitHub-flavored markdown preview. |
+| GitHub Actions | `github.vscode-github-actions` | Workflow editing. |
+| Rainbow Fart | `saekiraku.rainbow-fart` | Optional/fun — plays sounds while typing. Skip if not wanted. |
+
+**Install them all in one go** (same command on macOS / Linux / Windows — run in
+a terminal where `code` is on PATH):
+
+```bash
+# Look & feel
+code --install-extension ericgomez.phpstorm-theme
+code --install-extension chadalen.vscode-jetbrains-icon-theme
+code --install-extension phantriviethoang.phpstorm-icon
+code --install-extension tobiasalthoff.atom-material-theme
+code --install-extension zhangcy.claude-themes-by-zhangcy
+
+# PHP language & quality
+code --install-extension devsense.phptools-vscode
+code --install-extension devsense.composer-php-vscode
+code --install-extension devsense.intelli-php-vscode
+code --install-extension devsense.profiler-php-vscode
+code --install-extension junstyle.php-cs-fixer
+code --install-extension ericgomez.php-string-syntax
+
+# Editor quality-of-life
+code --install-extension eamodio.gitlens
+code --install-extension oderwat.indent-rainbow
+code --install-extension ericgomez.breakpoint-highlight
+code --install-extension ericgomez.js-string-syntax
+code --install-extension mechatroner.rainbow-csv
+code --install-extension inferrinizzard.prettier-sql-vscode
+code --install-extension mccprogrammer.github-style-markdown-preview
+code --install-extension github.vscode-github-actions
+```
+
+> **To match the look exactly:** after installing, open **Preferences: Color
+> Theme** and pick *PhpStorm Theme* (or *PHPStorm++ Dark*), and **Preferences:
+> File Icon Theme** and pick *JetBrains* (or *PhpStorm*).
+
+> **Not needed for PHP** (these were in my environment for other languages and
+> are safe to skip): `dart-code.dart-code`, `dart-code.flutter`, `golang.go`,
+> `ms-vscode.makefile-tools`, `openai.chatgpt`, `openai.codex-audio`.
 
 ### 3. Recommended VS Code settings
 
