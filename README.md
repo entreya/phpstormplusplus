@@ -194,8 +194,19 @@ or they'll apply from the settings block below.
 #### Settings — paste into your User `settings.json`
 
 This is the exact configuration used while building this (same on macOS, Linux
-and Windows). Open the Command Palette → **Preferences: Open User Settings
-(JSON)** and merge this in.
+and Windows). The quickest way to open the file is the Command Palette
+(`Ctrl+Shift+P` / `Cmd+Shift+P`) → **Preferences: Open User Settings (JSON)**.
+It lives at:
+
+| OS | Path |
+|---|---|
+| Windows | `%APPDATA%\Code\User\settings.json` (= `C:\Users\<you>\AppData\Roaming\Code\User\settings.json`) |
+| macOS | `~/Library/Application Support/Code/User/settings.json` |
+| Linux | `~/.config/Code/User/settings.json` |
+
+> `%APPDATA%` is hidden — paste `%APPDATA%\Code\User` into the File Explorer
+> address bar to jump straight there. (VS Code **Insiders** uses `Code - Insiders`
+> instead of `Code`.) Merge the block below into that file.
 
 ```jsonc
 {
@@ -207,6 +218,26 @@ and Windows). Open the Command Palette → **Preferences: Open User Settings
   "editor.fontSize": 16,
   "editor.lineHeight": 26,
   "editor.fontWeight": "400",
+
+  // --- Semantic colors (classes, namespaces, interfaces, properties) ---
+  // Force semantic highlighting on and give class/namespace/etc. explicit
+  // Darcula-like colors, so they're colored even if the theme doesn't define
+  // semantic tokens itself. (See "Classes / namespaces have no color" below.)
+  "editor.semanticHighlighting.enabled": true,
+  "editor.semanticTokenColorCustomizations": {
+    "enabled": true,
+    "rules": {
+      "class":     { "foreground": "#FFC66D" },
+      "interface": { "foreground": "#B5B6E3" },
+      "enum":      { "foreground": "#FFC66D" },
+      "type":      { "foreground": "#FFC66D" },
+      "namespace": { "foreground": "#A9B7C6" },
+      "property":  { "foreground": "#9876AA" },
+      "function":  { "foreground": "#FFC66D" },
+      "method":    { "foreground": "#FFC66D" }
+    }
+  },
+
   "editor.cursorStyle": "line-thin",
   "editor.cursorBlinking": "smooth",
   "editor.cursorSmoothCaretAnimation": "on",
@@ -254,7 +285,10 @@ and Windows). Open the Command Palette → **Preferences: Open User Settings
   "files.autoSaveDelay": 1000,
   // My setup formats PHP with php-cs-fixer. To use PHPStorm++'s own formatter
   // instead, set this to "phpstormplusplus.phpstormplusplus".
-  "[php]": { "editor.defaultFormatter": "junstyle.php-cs-fixer" },
+  "[php]": {
+    "editor.defaultFormatter": "junstyle.php-cs-fixer",
+    "editor.semanticHighlighting.enabled": true
+  },
   "php-cs-fixer.rules": "@PSR12,no_unused_imports,ordered_imports,array_indentation",
   "php-cs-fixer.onsave": true,
   // "php-cs-fixer.executablePath": "/opt/homebrew/bin/php-cs-fixer", // macOS; Windows: "C:\\\\path\\\\to\\\\php-cs-fixer.bat"
@@ -367,6 +401,34 @@ breakpoints bind:
   }
 }
 ```
+
+### Troubleshooting: classes / namespaces have no color
+
+If class names, namespaces, interfaces or enums show up plain (uncolored) while
+keywords/strings are colored, the editor isn't applying **semantic**
+highlighting to them. Two levels color PHP: TextMate (basic, regex) and
+semantic (the language server tells the editor "this token is a class"). Fix:
+
+1. **Add the semantic settings above** (`editor.semanticHighlighting.enabled`
+   and `editor.semanticTokenColorCustomizations`). These force the colors on even
+   when the color theme doesn't define semantic tokens — the usual cause, since
+   many ported themes (including some PhpStorm-style ones) don't. This applies
+   identically on Windows, macOS and Linux (they're colors/booleans, no paths).
+
+2. **Make sure a PHP language server is actually running.** Semantic tokens come
+   from DEVSENSE PHP Tools or Intelephense. Open a `.php` file and check the
+   status bar. If both DEVSENSE and Intelephense are installed they can clash —
+   disable one (`Ctrl+Shift+X` → the extension → Disable → **Developer: Reload
+   Window**) and retest.
+
+3. **Confirm what the token actually is.** Put the cursor on a class name →
+   Command Palette → **Developer: Inspect Editor Tokens and Scopes**. In the
+   popup, look at *semantic token type*:
+   - shows `class` / `namespace` → semantic highlighting works, the color rules
+     above will take effect;
+   - blank/absent → the language server isn't providing it (revisit step 2), and
+     the TextMate scope under *textmate scopes* is what's coloring (or not) the
+     token instead.
 
 ### Windows-specific notes
 
